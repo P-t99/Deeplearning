@@ -146,12 +146,11 @@ def main(train_path, test_path, outpath, epochs, batch_size, num_classes):
 
 
 
-# 如果这个脚本作为主脚本执行，则执行main函数
 if __name__ == '__main__':
     # 定义训练数据路径
-    train_path = "sdata.csv"
+    train_path = "combined_resultsjq.csv"
     # 定义测试数据路径
-    test_path = "sdata.csv"
+    test_path = "combined_resultsjq.csv"
     # 定义模型输出路径
     outpath = 'Data'
     # 定义每批次训练的样本数量
