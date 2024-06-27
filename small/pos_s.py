@@ -120,8 +120,8 @@ def main(train_path, test_path, outpath, epochs, batch_size, num_classes):
 
 
 if __name__ == '__main__':
-    train_path = "sdata.csv"
-    test_path = "sdata.csv"
+    train_path = "train.csv"
+    test_path = "train.csv"
     outpath = 'Data'
     batch_size = 50
     num_classes = 3

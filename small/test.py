@@ -63,6 +63,6 @@ def main(test_path, model_path, batch_size=32):
 
 # 如果这是主程序，则运行主函数
 if __name__ == '__main__':
-    test_path = "ndata.csv"
+    test_path = "combined_results.csv"
     model_path = 'Data/model.h5'
     main(test_path, model_path)
