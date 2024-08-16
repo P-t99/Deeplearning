@@ -23,11 +23,8 @@ import dataUtils, plotUtils
 # 导入TensorFlow Addons，一个包含了额外层、损失函数、优化器等工具的库
 import tensorflow_addons as tfa
 
-# 配置TensorFlow以允许显存动态增长，避免一次性占用全部显存
-config = tf.compat.v1.ConfigProto()
-config.gpu_options.allow_growth = True
-# 创建一个新的TensorFlow会话，并应用上面的配置
-sess = tf.compat.v1.Session(config=config)
+# 设置GPU配置，允许显存动态增长，避免一次性占用全部显存
+tf.config.experimental.set_memory_growth(tf.config.list_physical_devices('GPU')[0], True)
 
 # 定义一个残差块函数，用于构建残差网络结构
 def res_block(x, channels, i):
@@ -44,9 +41,8 @@ def res_block(x, channels, i):
     x = Conv2D(channels, kernel_size=(3, 3), padding='same', strides=strides)(x)
     # 将输入和卷积结果相加
     x = add([x, x_add])
-    # 应用激活函数
-    Activation(K.relu)(x)
-    # 返回残差块的输出
+    # 应用激活函数并返回残差块的输出
+    x = Activation(K.relu)(x)
     return x
 
 def build_model(input_shape, num_classes):
@@ -59,7 +55,6 @@ def build_model(input_shape, num_classes):
     x = keras.layers.GaussianNoise(0.2)(x)
 
     x = Conv2D(16, kernel_size=(3, 3), activation='relu', input_shape=input_shape, padding='same')(x)
-    # x = MaxPooling2D(pool_size=(3, 3), strides=(2, 2))(x)
 
     for i in range(2):
         x = res_block(x, 16, i)
@@ -76,7 +71,7 @@ def build_model(input_shape, num_classes):
     x = Dense(num_classes, activation='softmax')(x)
 
     model = Model(inputs=inpt, outputs=x)
-    OP = keras.optimizers.Adam(lr=0.00015, epsilon=None, decay=0.0)
+    OP = keras.optimizers.Adam(lr=0.00015)
     model.compile(loss=keras.losses.sparse_categorical_crossentropy,
                   optimizer=OP,
                   metrics=['acc'])
@@ -87,16 +82,17 @@ def main(train_path, test_path, outpath, epochs, batch_size, num_classes):
     batch_size = int(batch_size)
     label = "position"
     train_x, train_y, test_x, test_y = dataUtils.get_data(train_path, label, train_ratio=0.9, data_augmentation='False')
-    print(train_x, len(test_x))
-    for index in range(len(train_x)):
+    
+    # 打印少量样本数据
+    for index in range(min(len(train_x), 5)):
         print(train_x[index])
         print(train_y[index])
-    # test_x, test_y, _, _ = dataUtils.get_train_and_test_data(test_path, label, train_ratio=0.95)
 
     model = build_model([160, 1], num_classes)
+    
     dynamic_LR = keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.1,
                                                    patience=10, verbose=0, mode='auto',
-                                                   epsilon=0.0001, cooldown=0, min_lr=0)
+                                                   cooldown=0, min_lr=0)
     early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss', patience=7, mode='auto')
     checkpoint_cb = keras.callbacks.ModelCheckpoint(outpath+"/model.h5", save_best_only=True)
 
@@ -107,17 +103,12 @@ def main(train_path, test_path, outpath, epochs, batch_size, num_classes):
                         callbacks=[dynamic_LR, early_stopping, checkpoint_cb],
                         validation_split=0.3)
 
-    # train_x2, train_y2, test_x2, test_y2 = dataUtils.get_data(test_path, label, train_ratio=0.99)
-    # y_pre = model.predict(train_x2[1:50, :])
-    # print(y_pre)
-    # print(train_y2[1:50])
     loss1, acc1 = model.evaluate(train_x, train_y)
     print('Res test_2,acc:{:5.2f}%'.format(100*acc1))
 
     plotUtils.plot_history(history, outpath)
     tf.saved_model.save(model, outpath+'/tensorflow/ncz/1')
     plotUtils.plot_confusion_matrix(model, test_x, test_y, outpath)
-
 
 if __name__ == '__main__':
     train_path = "train.csv"
