@@ -114,7 +114,7 @@ if __name__ == '__main__':
     train_path = "train.csv"
     test_path = "train.csv"
     outpath = 'Data'
-    batch_size = 50
+    batch_size = 128
     num_classes = 3
     epochs = 200
     main(train_path, test_path, outpath, epochs, batch_size, num_classes)
