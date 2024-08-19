@@ -232,7 +232,7 @@ if __name__ == '__main__':
     train_path = "train.csv"
     test_path = "train.csv"
     outpath = 'Data'
-    batch_size = 50
+    batch_size = 64
     num_classes = 3
     epochs = 200
     n_splits = 5  # 5-fold cross-validation
