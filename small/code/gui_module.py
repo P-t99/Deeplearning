@@ -67,6 +67,22 @@ class DataCollectionGUI(QWidget):
         left_panel.addWidget(self.confidence_label)
         left_panel.addWidget(self.timestamp_label)
 
+        # New information display for matrix metrics
+        self.top48_avg_label = QLabel('Top48均值: -')
+        self.rest_avg_label = QLabel('其余均值: -')
+        self.difference_percentage_label = QLabel('差值百分比: -')
+        left_panel.addWidget(self.top48_avg_label)
+        left_panel.addWidget(self.rest_avg_label)
+        left_panel.addWidget(self.difference_percentage_label)
+        
+        # 添加新的中位数标签
+        self.top48_median_label = QLabel('Top48中位数: -')
+        self.rest_median_label = QLabel('其余中位数: -')
+        self.difference_percentage_median_label = QLabel('中位数差值百分比: -')
+        left_panel.addWidget(self.top48_median_label)
+        left_panel.addWidget(self.rest_median_label)
+        left_panel.addWidget(self.difference_percentage_median_label)
+
         # Label management
         label_layout = QHBoxLayout()
         self.label_input = QLineEdit()
@@ -180,6 +196,14 @@ class DataCollectionGUI(QWidget):
         self.web_info_label.setText(f'当前睡姿: {posture}')
         self.confidence_label.setText(f'置信度: {confidence:.2f}')
         self.timestamp_label.setText(f'最后更新时间: {timestamp}')
+
+    def update_metrics(self, top48_avg, rest_avg, difference_percentage, top48_median, rest_median, difference_percentage_median):
+        self.top48_avg_label.setText(f'Top48均值: {top48_avg:.2f}')
+        self.rest_avg_label.setText(f'其余均值: {rest_avg:.2f}')
+        self.difference_percentage_label.setText(f'差值百分比: {difference_percentage:.2f}%')
+        self.top48_median_label.setText(f'Top48中位数: {top48_median:.2f}')
+        self.rest_median_label.setText(f'其余中位数: {rest_median:.2f}')
+        self.difference_percentage_median_label.setText(f'中位数差值百分比: {difference_percentage_median:.2f}%')
 
     def save_collected_data(self):
         if self.collected_data:

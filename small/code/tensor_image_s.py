@@ -48,6 +48,41 @@ heatmap_colorbar = None
 # Flask 应用
 app = Flask(__name__)
 
+class MatrixMetrics:
+    def __init__(self):
+        self.top48_avg = 0
+        self.rest_avg = 0
+        self.difference_percentage = 0
+        self.top48_median = 0  # 新增
+        self.rest_median = 0   # 新增
+        self.difference_percentage_median = 0  # 新增
+
+    def calculate(self, matrix):
+        flat_matrix = matrix.flatten()
+        sorted_matrix = np.sort(flat_matrix)[::-1]  # 降序排序
+        
+        # 平均值计算（保持不变）
+        self.top48_avg = np.mean(sorted_matrix[:32])
+        self.rest_avg = np.mean(sorted_matrix[32:])
+        self.difference_percentage = (self.top48_avg - self.rest_avg) / 255 * 100
+        
+        # 中位数计算（新增）
+        # self.top48_median = np.median(sorted_matrix[:32])
+        self.top48_median = np.mean(sorted_matrix[:32])
+        # self.rest_median = np.median(sorted_matrix[32:])
+        self.rest_median = np.percentile(sorted_matrix[32:], 75)
+        self.difference_percentage_median = (self.top48_median - self.rest_median) / 255 * 100
+
+    def get_metrics(self):
+        return {
+            "top48_avg": self.top48_avg,
+            "rest_avg": self.rest_avg,
+            "difference_percentage": self.difference_percentage,
+            "top48_median": self.top48_median,
+            "rest_median": self.rest_median,
+            "difference_percentage_median": self.difference_percentage_median
+        }
+
 def get_ip_addresses():
     ip_addresses = []
     interfaces = netifaces.interfaces()
@@ -73,6 +108,7 @@ def home():
                 body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; background-color: #f0f0f0; }
                 #result { font-size: 24px; margin-bottom: 20px; color: #333; }
                 #timestamp { font-size: 14px; color: #666; }
+                #metrics { font-size: 16px; margin-top: 20px; color: #333; }
                 #ip-addresses { font-size: 16px; margin-top: 20px; color: #333; }
                 #heatmap { max-width: 100%; height: auto; margin-top: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
             </style>
@@ -83,6 +119,14 @@ def home():
                         .then(data => {
                             document.getElementById('result').innerText = `当前睡姿: ${data.posture} (置信度: ${data.confidence.toFixed(2)})`;
                             document.getElementById('timestamp').innerText = `最后更新时间: ${new Date(data.timestamp * 1000).toLocaleString()}`;
+                            document.getElementById('metrics').innerHTML = `
+                                <p>Top48均值: ${data.top48_avg.toFixed(2)}</p>
+                                <p>其余均值: ${data.rest_avg.toFixed(2)}</p>
+                                <p>差值百分比: ${data.difference_percentage.toFixed(2)}%</p>
+                                <p>Top48中位数: ${data.top48_median.toFixed(2)}</p>
+                                <p>其余中位数: ${data.rest_median.toFixed(2)}</p>
+                                <p>中位数差值百分比: ${data.difference_percentage_median.toFixed(2)}%</p>
+                            `;
                             document.getElementById('heatmap').src = '/get_heatmap?' + new Date().getTime();
                         });
                 }
@@ -93,6 +137,7 @@ def home():
             <h1>睡姿预测结果</h1>
             <div id="result">加载中...</div>
             <div id="timestamp"></div>
+            <div id="metrics"></div>
             <img id="heatmap" src="/get_heatmap" alt="热力图">
             <div id="ip-addresses">
                 <p>可用的访问地址:</p>
@@ -106,8 +151,12 @@ def home():
 
 @app.route('/get_latest')
 def get_latest():
-    global latest_prediction, heatmap_timestamp
-    return jsonify({**latest_prediction, "heatmap_timestamp": heatmap_timestamp})
+    global latest_prediction, heatmap_timestamp, matrix_metrics
+    return jsonify({
+        **latest_prediction, 
+        "heatmap_timestamp": heatmap_timestamp, 
+        **matrix_metrics.get_metrics()
+    })
 
 @app.route('/get_heatmap')
 def get_heatmap():
@@ -233,9 +282,10 @@ class BackgroundThread(QThread):
     update_gui = pyqtSignal(str, float, str)
     matrix_ready = pyqtSignal(object, object, object, object, float, float)
     raw_matrix = pyqtSignal(object)
+    metrics_ready = pyqtSignal(float, float, float, float, float, float)
 
     def run(self):
-        global ser, alld, running, latest_prediction, last_update_time
+        global ser, alld, running, latest_prediction, last_update_time, matrix_metrics
         last_update_time = time.time()
         while running:
             if ser is None or not ser.is_open:
@@ -261,8 +311,22 @@ class BackgroundThread(QThread):
                             "timestamp": current_time
                         }
                         
+                        # 计算矩阵指标
+                        matrix_metrics.calculate(frameData_b)
+                        metrics = matrix_metrics.get_metrics()
+                        
                         # 发送原始矩阵数据到GUI
                         self.raw_matrix.emit(frameData_b)
+                        
+                        # 发送矩阵指标到GUI
+                        self.metrics_ready.emit(
+                            metrics['top48_avg'],
+                            metrics['rest_avg'],
+                            metrics['difference_percentage'],
+                            metrics['top48_median'],
+                            metrics['rest_median'],
+                            metrics['difference_percentage_median']
+                        )
                         
                         # 每2秒更新一次GUI和热力图
                         if current_time - last_update_time >= 2:
@@ -317,7 +381,7 @@ def check_exit_event(app, bg_thread):
         app.quit()
 
 def main():
-    global alld, ser, last_update_time, latest_prediction, running, posture_labels
+    global alld, ser, last_update_time, latest_prediction, running, posture_labels, matrix_metrics
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -326,6 +390,7 @@ def main():
     alld = np.array([], dtype=np.uint8)
     last_update_time = time.time()
     posture_labels = ['平躺', '左侧卧', '右侧卧']
+    matrix_metrics = MatrixMetrics()
 
     QApplication.setFont(QFont('Arial', 10))
     app = QApplication(sys.argv)
@@ -336,6 +401,7 @@ def main():
     bg_thread.update_gui.connect(gui.update_web_info)
     bg_thread.matrix_ready.connect(gui.update_heatmap)
     bg_thread.raw_matrix.connect(gui.collect_raw_matrix)
+    bg_thread.metrics_ready.connect(gui.update_metrics)
     bg_thread.start()
 
     # Connect GUI signals to appropriate slots
