@@ -61,7 +61,7 @@ class KeepTop32(tf.keras.layers.Layer):
 
     def call(self, inputs):
         squeezed_inputs = tf.squeeze(inputs, axis=-1)
-        values, _ = tf.nn.top_k(squeezed_inputs, k=32)
+        values, _ = tf.nn.top_k(squeezed_inputs, k=48)
         thresholds = values[:, -1]
         thresholds = tf.reshape(thresholds, [-1, 1, 1])
         mask = tf.cast(tf.greater_equal(inputs, thresholds), tf.float32)

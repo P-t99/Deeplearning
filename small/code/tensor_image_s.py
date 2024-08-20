@@ -29,7 +29,7 @@ plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # 加载训练好的模型
-model = tf.saved_model.load(r'D:\repository\Algo_test\ML\睡姿\Data\tensorflow\ncz\1')
+model = tf.saved_model.load(r'D:\repository\deeplearning\small\Data\tensorflow\ncz\1')
 logging.info("模型加载成功")
 
 # 全局变量
@@ -165,7 +165,7 @@ def read_matrix_from_serial(ser):
                         return np.vstack((img_data[8:16, :10], img_data[7::-1, :10]))
     return None
 
-def update_heatmap(matrix, top_n=32):
+def update_heatmap(matrix, top_n=48):
     global latest_heatmap, heatmap_timestamp, heatmap_fig, heatmap_ax, heatmap_colorbar
 
     with heatmap_lock:
