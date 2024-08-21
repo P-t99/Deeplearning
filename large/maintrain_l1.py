@@ -55,17 +55,36 @@ def get_data(filepath, label, normalization=False, shuffle=True, test_size=0.2, 
     return x_train, y_train, x_test, y_test
 
 # Optimized KeepTop32 layer
-class KeepTopN(tf.keras.layers.Layer):
-    def __init__(self, **kwargs):
-        super(KeepTopN, self).__init__(**kwargs)
+import tensorflow as tf
+
+class KeepTop32(tf.keras.layers.Layer):
+    def __init__(self, k=48, **kwargs):
+        super(KeepTop32, self).__init__(**kwargs)
+        self.k = k
 
     def call(self, inputs):
-        squeezed_inputs = tf.squeeze(inputs, axis=-1)
-        values, _ = tf.nn.top_k(squeezed_inputs, k=300)
+        # 输入形状应为 (batch_size, 16, 10, 1)
+        
+        # 展平空间维度和通道维度
+        flattened = tf.reshape(inputs, [tf.shape(inputs)[0], -1])
+        
+        # 获取 top k 个值
+        values, _ = tf.nn.top_k(flattened, k=self.k)
+        
+        # 获取阈值（第k个最大值）
         thresholds = values[:, -1]
-        thresholds = tf.reshape(thresholds, [-1, 1, 1])
-        mask = tf.cast(tf.greater_equal(inputs, thresholds), tf.float32)
+        
+        # 重塑阈值以便广播
+        thresholds = tf.reshape(thresholds, [-1, 1, 1, 1])
+        
+        # 创建并应用掩码
+        mask = tf.cast(tf.greater_equal(inputs, thresholds), inputs.dtype)
         return inputs * mask
+
+    def get_config(self):
+        config = super(KeepTop32, self).get_config()
+        config.update({"k": self.k})
+        return config
 
 # Model building functions
 def res_block(x, channels, i):
@@ -85,15 +104,15 @@ def res_block(x, channels, i):
 def build_model(input_shape, num_classes):
     inpt = Input(shape=input_shape)
     
-    x = KeepTopN()(inpt)
-    x = Lambda(lambda y: tf.reshape(y, [-1, 32, 32, 1]))(x)
+    x = Lambda(lambda y: tf.reshape(y, [-1, 32, 32, 1]))(inpt)
+    x = KeepTop32()(x)
     x = Lambda(lambda y: tfa.image.gaussian_filter2d(y, [3, 3], 1, padding='SYMMETRIC'))(x)
     x = Lambda(lambda y: tfa.image.sharpness(y, 0.15))(x)
     x = Lambda(lambda y: tf.image.per_image_standardization(y))(x)
     
     x = Lambda(lambda y: y + tf.random.normal(tf.shape(y), mean=0.0, stddev=0.2) * tf.cast(tf.keras.backend.learning_phase(), tf.float32))(x)
 
-    x = Conv2D(16, kernel_size=(3, 3), activation='relu', padding='same')(x)
+    x = Conv2D(32, kernel_size=(3, 3), activation='relu', padding='same')(x)
 
     for i in range(2):
         x = res_block(x, 16, i)
@@ -160,7 +179,7 @@ def plot_confusion_matrix(model, x_test, y_test, path):
     plotmatrix(path, matrix, range(np.max(y_test)+1))
 
 # Main function
-def main(train_path, test_path, outpath, epochs, batch_size, num_classes, n_splits=5, KeepTopN=KeepTopN):
+def main(train_path, test_path, outpath, epochs, batch_size, num_classes, n_splits=5):
     epochs = int(epochs)
     batch_size = int(batch_size)
     label = "position"
@@ -219,7 +238,7 @@ def main(train_path, test_path, outpath, epochs, batch_size, num_classes, n_spli
     
     # Evaluate on test set using the model from the best fold
     best_fold = np.argmax(fold_accuracies) + 1
-    best_model = tf.keras.models.load_model(outpath+f"/model_fold{best_fold}.h5", custom_objects={'KeepTopN': KeepTopN})
+    best_model = keras.models.load_model(outpath+f"/model_fold{best_fold}.h5", custom_objects={'KeepTop32': KeepTop32})
     test_loss, test_acc = best_model.evaluate(x_test, y_test, verbose=0)
     print(f'\nTest accuracy (using best model from fold {best_fold}): {test_acc:.4f}')
 
@@ -234,6 +253,9 @@ if __name__ == '__main__':
     outpath = 'Data'
     batch_size = 64
     num_classes = 3
-    epochs = 200
+    epochs = 10
     n_splits = 5  # 5-fold cross-validation
-    main(train_path, test_path, outpath, epochs, batch_size, num_classes, n_splits, KeepTopN=KeepTopN)
+    main(train_path, test_path, outpath, epochs, batch_size, num_classes, n_splits)
+    
+    
+    

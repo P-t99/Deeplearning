@@ -63,14 +63,14 @@ class MatrixMetrics:
         
         # 平均值计算（保持不变）
         self.top48_avg = np.mean(sorted_matrix[:32])
-        self.rest_avg = np.mean(sorted_matrix[32:])
+        self.rest_avg = np.var(sorted_matrix[:32])
         self.difference_percentage = (self.top48_avg - self.rest_avg) / 255 * 100
         
         # 中位数计算（新增）
         # self.top48_median = np.median(sorted_matrix[:32])
-        self.top48_median = np.mean(sorted_matrix[:32])
-        # self.rest_median = np.median(sorted_matrix[32:])
-        self.rest_median = np.percentile(sorted_matrix[32:], 75)
+        self.top48_median = (np.mean(sorted_matrix[1:16])+np.mean(sorted_matrix[1:32]))/2
+        self.rest_median = np.median(sorted_matrix)
+        # self.rest_median = np.percentile(sorted_matrix[32:], 75)
         self.difference_percentage_median = (self.top48_median - self.rest_median) / 255 * 100
 
     def get_metrics(self):
