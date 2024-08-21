@@ -125,5 +125,5 @@ if __name__ == '__main__':
     outpath = 'Data'
     batch_size = 50
     num_classes = 3
-    epochs = 50
+    epochs = 200
     main(train_path, test_path, outpath, epochs, batch_size, num_classes)
