@@ -58,7 +58,7 @@ def get_data(filepath, label, normalization=False, shuffle=True, test_size=0.2, 
 import tensorflow as tf
 
 class KeepTop32(tf.keras.layers.Layer):
-    def __init__(self, k=300, **kwargs):
+    def __init__(self, k=400, **kwargs):
         super(KeepTop32, self).__init__(**kwargs)
         self.k = k
 
