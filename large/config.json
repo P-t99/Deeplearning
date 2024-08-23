@@ -1,0 +1,5 @@
+{
+    "port": 64990,
+    "baud_rate": 1000000,
+    "matrix_size": 32
+}
