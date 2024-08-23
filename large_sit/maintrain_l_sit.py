@@ -255,7 +255,7 @@ if __name__ == '__main__':
     outpath = 'Data'
     batch_size = 64
     num_classes = 4
-    epochs = 10
+    epochs = 20
     n_splits = 5  # 5-fold cross-validation
     main(train_path, test_path, outpath, epochs, batch_size, num_classes, n_splits)
     
