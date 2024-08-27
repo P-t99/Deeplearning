@@ -270,7 +270,7 @@ class DataCollectionGUI(QWidget):
         self.timestamp_label.setText(f'最后更新时间: {timestamp}')
 
     def update_metrics(self, bed_status, edge_status, top48_avg, rest_avg, top48_median, rest_median):
-        self.bed_status_label.setText(f'床上状态: {bed_status[0]} (置信度: {bed_status[1]:.2f}%)')
+        self.bed_status_label.setText(f'床上状态: {bed_status[0]} (计算比例: {bed_status[1]:.2f}%)')
         self.edge_status_label.setText(f'边缘状态: {edge_status[0]} (置信度: {edge_status[1]:.2f}%)')
         self.top48_avg_label.setText(f'Top48均值: {top48_avg:.2f}')
         self.rest_avg_label.setText(f'其余均值: {rest_avg:.2f}')

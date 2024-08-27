@@ -203,7 +203,7 @@ def home():
                             document.getElementById('result').innerText = `当前睡姿: ${data.posture} (置信度: ${data.confidence.toFixed(2)})`;
                             document.getElementById('timestamp').innerText = `最后更新时间: ${new Date(data.timestamp * 1000).toLocaleString()}`;
                             document.getElementById('metrics').innerHTML = `
-                                <p>床上状态: ${data.bed_status[0]} (置信度: ${data.bed_status[1].toFixed(2)}%)</p>
+                                <p>床上状态: ${data.bed_status[0]} (计算比例: ${data.bed_status[1].toFixed(2)}%)</p>
                                 <p>边缘状态: ${data.edge_status[0]} (置信度: ${data.edge_status[1].toFixed(2)}%)</p>
                                 <p>Top48均值: ${data.top48_avg.toFixed(2)}</p>
                                 <p>其余均值: ${data.rest_avg.toFixed(2)}</p>
@@ -339,17 +339,19 @@ def read_matrix_from_serial(ser):
                     alld = alld[1028:]  # 将处理后的数据从缓冲区中删除
                     
                     if len(imgdata) == 1024:
-                        img_data = np.array(imgdata).flatten()  # 将图像数据展平成一维数组
+                        img_data = imgdata.reshape(32, 32)
+                        return np.vstack((img_data[8:16, :10], img_data[7::-1, :10]))
+                        # img_data = np.array(imgdata).flatten()  # 将图像数据展平成一维数组
                         
-                        # 翻转数据块，使其顺序正确
-                        for i in range(8):
-                            start1, end1 = i * 32, (i + 1) * 32
-                            start2, end2 = (14 - i) * 32, (15 - i) * 32
-                            img_data[start1:end1], img_data[start2:end2] = img_data[start2:end2].copy(), img_data[start1:end1].copy()
+                        # # 翻转数据块，使其顺序正确
+                        # for i in range(8):
+                        #     start1, end1 = i * 32, (i + 1) * 32
+                        #     start2, end2 = (14 - i) * 32, (15 - i) * 32
+                        #     img_data[start1:end1], img_data[start2:end2] = img_data[start2:end2].copy(), img_data[start1:end1].copy()
                         
-                        img_data = np.roll(img_data, -15 * 32)  # 循环滚动数据
-                        img_data = img_data.reshape(32, 32)  # 将数据重塑为32x32的矩阵
-                        return img_data  # 返回处理后的图像矩阵
+                        # img_data = np.roll(img_data, -15 * 32)  # 循环滚动数据
+                        # img_data = img_data.reshape(32, 32)  # 将数据重塑为32x32的矩阵
+                        # return img_data  # 返回处理后的图像矩阵
 
     return None  # 如果没有完整的数据包，返回None
 
