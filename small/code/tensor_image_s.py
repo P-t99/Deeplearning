@@ -219,7 +219,7 @@ def read_matrix_from_serial(ser):
                         return np.vstack((img_data[8:16, :10], img_data[7::-1, :10]))
     return None
 
-def update_heatmap(matrix, top_n=48):
+def update_heatmap(matrix, top_n=64):
     global latest_heatmap, heatmap_timestamp, heatmap_fig, heatmap_ax, heatmap_colorbar
 
     with heatmap_lock:
