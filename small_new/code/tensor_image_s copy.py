@@ -61,46 +61,94 @@ app = Flask(__name__)  # 创建Flask应用
 
 class MatrixMetrics:
     def __init__(self):
-        # 初始化矩阵指标的平均值和中位数等属性
-        self.top48_avg = 0  # 前48个最大值的平均值
-        self.rest_avg = 0  # 剩余值的平均值
-        self.difference_percentage = 0  # 前48个值与其余值的差异百分比
-        self.top48_median = 0  # 前48个最大值的中位数
-        self.rest_median = 0  # 剩余值的中位数
-        self.difference_percentage_median = 0  # 前48个值与其余值的中位数差异百分比
+        self.bed_status = ("", 0)  # 在床/离床状态
+        self.edge_status = ("", 0)  # 坠床/坐床边状态
+        self.top48_avg = 0
+        self.rest_avg = 0
+        self.top48_median = 0
+        self.rest_median = 0
 
     def calculate(self, matrix):
-        # 计算矩阵的各种指标
-        flat_matrix = matrix.flatten()  # 将矩阵展开为一维数组
-        sorted_matrix = np.sort(flat_matrix)[::-1]  # 降序排序
+        # 计算在床/离床状态
+        ratio = self.calculate_harmonic_mean(matrix)
+        self.bed_status = ("在床" if ratio > 0.08 else "离床", ratio * 100)
 
-        # 计算前48个最大值的平均值
-        self.top48_avg = np.mean(sorted_matrix[:32]) if len(sorted_matrix) >= 32 else 0
-        # 计算剩余部分的平均值
-        self.rest_avg = np.mean(sorted_matrix[32:]) if len(sorted_matrix) > 32 else 0
-        # 计算差异百分比
-        self.difference_percentage = ((self.top48_avg - self.rest_avg) / 255 * 100) if self.top48_avg != self.rest_avg else 0
+        # 计算坠床/坐床边状态
+        centroid = self.calculate_weighted_centroid(matrix)
+        if centroid[1] < 4 or centroid[1] >= 6:
+            features = self.extract_features(matrix)
+            probability = self.embedded_system_logic(features)
+            status = "坠床风险" if probability > 0.5 else "坐床边"
+            self.edge_status = (status, max(probability, 1 - probability) * 100)
+        else:
+            self.edge_status = ("正常", 100)
+
+        # 计算其他指标
+        flat_matrix = matrix.flatten()
+        sorted_matrix = np.sort(flat_matrix)[::-1]
+
+        self.top48_avg = np.mean(sorted_matrix[:48]) if len(sorted_matrix) >= 48 else 0
+        self.rest_avg = np.mean(sorted_matrix[48:]) if len(sorted_matrix) > 48 else 0
         
-        # 计算前48个最大值的中位数
-        self.top48_median = (np.median(sorted_matrix[1:64]) + np.median(sorted_matrix[1:128])) / 2 if len(sorted_matrix) >= 128 else 0
-        # 计算剩余部分的中位数
-        rest_elements_after_32 = sorted_matrix[300:]  # 取从第300个之后的元素
-        non_zero_elements = rest_elements_after_32[rest_elements_after_32 > 5]  # 去掉小于等于5的元素
+        self.top48_median = np.median(sorted_matrix[:48]) if len(sorted_matrix) >= 48 else 0
+        rest_elements = sorted_matrix[48:]
+        non_zero_elements = rest_elements[rest_elements > 5]
         self.rest_median = np.mean(non_zero_elements) if len(non_zero_elements) > 0 else 5
-        # 计算中位数的差异百分比
-        self.difference_percentage_median = ((self.top48_median - self.rest_median) / 255 * 100) if self.top48_median != self.rest_median else 0
-    
+
+    def calculate_harmonic_mean(self, matrix):
+        sorted_values = np.sort(matrix.flatten())[::-1]
+        top_16_median = np.mean(sorted_values[:16])
+        top_32_median = np.mean(sorted_values[:32])
+        
+        if top_16_median + top_32_median > 0:
+            harmonic_mean = 2 * (top_16_median * top_32_median) / (top_16_median + top_32_median)
+        else:
+            harmonic_mean = 0
+        
+        return harmonic_mean / 255
+
+    def calculate_weighted_centroid(self, matrix, top_n=64):
+        reshaped_matrix = matrix.reshape(16, 10)
+        flat_indices = np.argsort(reshaped_matrix.flatten())[-top_n:]
+        top_points = np.array(np.unravel_index(flat_indices, reshaped_matrix.shape)).T
+        point_values = reshaped_matrix[top_points[:, 0], top_points[:, 1]]
+        total_weight = np.sum(point_values)
+        centroid = np.sum(top_points * point_values[:, np.newaxis], axis=0) / total_weight
+        return centroid
+
+    def extract_features(self, matrix):
+        flat_matrix = matrix.flatten()
+        
+        top64_indices = np.argsort(flat_matrix)[-64:]
+        top64_values = flat_matrix[top64_indices]
+        valid_top64_indices = top64_indices[top64_values > 5]
+        valid_top64_rows = valid_top64_indices // matrix.shape[1]
+        unique_valid_top64_rows = np.unique(valid_top64_rows)
+        
+        min_val, max_val = np.min(flat_matrix), np.max(flat_matrix)
+        threshold = min_val + 0.5 * (max_val - min_val)
+        
+        above_threshold_indices = np.where((flat_matrix >= threshold) & (flat_matrix > 5))[0]
+        above_threshold_rows = above_threshold_indices // matrix.shape[1]
+        unique_above_threshold_rows = np.unique(above_threshold_rows)
+        
+        return [len(unique_valid_top64_rows), len(unique_above_threshold_rows)]
+
+    def embedded_system_logic(self, features):
+        coefficients = np.array([2.2440458, 1.79786801])
+        intercept = -29.922462671061126
+        log_odds = np.dot(features, coefficients) + intercept
+        return 1 / (1 + np.exp(-log_odds))
+
     def get_metrics(self):
-        # 返回计算好的指标字典
         return {
+            "bed_status": self.bed_status,
+            "edge_status": self.edge_status,
             "top48_avg": self.top48_avg,
             "rest_avg": self.rest_avg,
-            "difference_percentage": self.difference_percentage,
             "top48_median": self.top48_median,
-            "rest_median": self.rest_median,
-            "difference_percentage_median": self.difference_percentage_median
-        }
-        
+            "rest_median": self.rest_median
+        }     
 def get_ip_addresses():
     # 获取所有非回环网络接口的IP地址
     ip_addresses = []
@@ -149,21 +197,20 @@ def home():
                 }
 
                 function updateResult() {
-                    // 从服务器获取最新的预测结果并更新页面
                     fetch('/get_latest')
                         .then(response => response.json())
                         .then(data => {
                             document.getElementById('result').innerText = `当前睡姿: ${data.posture} (置信度: ${data.confidence.toFixed(2)})`;
                             document.getElementById('timestamp').innerText = `最后更新时间: ${new Date(data.timestamp * 1000).toLocaleString()}`;
                             document.getElementById('metrics').innerHTML = `
+                                <p>床上状态: ${data.bed_status[0]} (置信度: ${data.bed_status[1].toFixed(2)}%)</p>
+                                <p>边缘状态: ${data.edge_status[0]} (置信度: ${data.edge_status[1].toFixed(2)}%)</p>
                                 <p>Top48均值: ${data.top48_avg.toFixed(2)}</p>
                                 <p>其余均值: ${data.rest_avg.toFixed(2)}</p>
-                                <p>差值百分比: ${data.difference_percentage.toFixed(2)}%</p>
                                 <p>Top48中位数: ${data.top48_median.toFixed(2)}</p>
                                 <p>其余中位数: ${data.rest_median.toFixed(2)}</p>
-                                <p>中位数差值百分比: ${data.difference_percentage_median.toFixed(2)}%</p>
                             `;
-                            document.getElementById('heatmap').src = '/get_heatmap?' + new Date().getTime();  // 更新热力图图像
+                            document.getElementById('heatmap').src = '/get_heatmap?' + new Date().getTime();
                         });
                 }
                 setInterval(updateResult, 1500);  // 每隔1.5秒更新一次结果
@@ -205,20 +252,28 @@ def home():
 
 @app.route('/get_latest')
 def get_latest():
-    # 处理获取最新预测结果的HTTP请求
     global latest_prediction, heatmap_timestamp
     try:
-        current_prediction = inference_results.get(block=False)  # 尝试从推理结果队列中获取最新结果
+        current_prediction = inference_results.get(block=False)
     except Queue.Empty:
-        current_prediction = latest_prediction  # 如果队列为空，使用最新的全局预测结果
+        current_prediction = latest_prediction
     
     try:
-        metrics = metrics_results.get(block=False)  # 尝试从指标结果队列中获取最新指标
+        metrics = metrics_results.get(block=False)
     except Queue.Empty:
-        metrics = {}  # 如果队列为空，返回空的指标数据
+        metrics = {}
     
-    return jsonify({**current_prediction, "heatmap_timestamp": heatmap_timestamp, **metrics})  # 返回包含预测结果、热力图时间戳和指标的JSON响应
-
+    return jsonify({
+        **current_prediction, 
+        "heatmap_timestamp": heatmap_timestamp, 
+        "bed_status": metrics.get("bed_status", ("", 0)),
+        "edge_status": metrics.get("edge_status", ("", 0)),
+        "top48_avg": metrics.get("top48_avg", 0),
+        "rest_avg": metrics.get("rest_avg", 0),
+        "top48_median": metrics.get("top48_median", 0),
+        "rest_median": metrics.get("rest_median", 0)
+    })
+    
 @app.route('/get_heatmap')
 def get_heatmap():
     # 处理获取最新热力图的HTTP请求
@@ -298,7 +353,7 @@ def read_matrix_from_serial(ser):
 
     return None  # 如果没有完整的数据包，返回None
 
-def update_heatmap(matrix, top_n=400):
+def update_heatmap(matrix, top_n=64):
     global latest_heatmap, heatmap_timestamp, heatmap_fig, heatmap_ax, heatmap_colorbar
 
     with heatmap_lock:  # 使用锁来确保热力图更新时的线程安全
@@ -485,7 +540,7 @@ class InferenceThread(QThread):
         self.wait()  # 等待线程安全退出
 
 class MetricsCalculationThread(QThread):
-    metrics_ready = pyqtSignal(float, float, float, float, float, float)  # 定义一个信号，当计算完成时发出
+    metrics_ready = pyqtSignal(tuple, tuple, float, float, float, float)  # 定义一个信号，当计算完成时发出
 
     def __init__(self, calculation_interval, parent=None):
         super().__init__(parent)
@@ -498,29 +553,29 @@ class MetricsCalculationThread(QThread):
         while running:
             current_time = time.time()
             if current_time - last_calculation_time >= self.calculation_interval and matrix_buffer:
-                matrix = matrix_buffer[-1]  # 获取最新的矩阵数据
-                self.matrix_metrics.calculate(matrix)  # 计算矩阵的各项指标
-                metrics = self.matrix_metrics.get_metrics()  # 获取计算好的指标
+                matrix = matrix_buffer[-1]
+                self.matrix_metrics.calculate(matrix)
+                metrics = self.matrix_metrics.get_metrics()
                 
                 while not metrics_results.empty():
-                    metrics_results.get()  # 清空之前的指标结果队列
-                metrics_results.put(metrics)  # 将最新的指标结果放入队列
+                    metrics_results.get()
+                metrics_results.put(metrics)
                 
                 self.metrics_ready.emit(
+                    metrics['bed_status'],
+                    metrics['edge_status'],
                     metrics['top48_avg'],
                     metrics['rest_avg'],
-                    metrics['difference_percentage'],
                     metrics['top48_median'],
-                    metrics['rest_median'],
-                    metrics['difference_percentage_median']
-                )  # 通过信号发送指标数据
+                    metrics['rest_median']
+                )
                 
                 last_calculation_time = current_time
 
             if exit_event.is_set():
                 break
 
-            self.msleep(10)  # 线程休眠10毫秒
+            self.msleep(10)
 
     def stop(self):
         global running

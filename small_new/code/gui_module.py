@@ -106,19 +106,19 @@ class DataCollectionGUI(QWidget):
 
         # Matrix metrics display
         metrics_frame = QCollapsibleFrame("矩阵指标")
+        self.bed_status_label = QLabel('床上状态: - (置信度: -%)')
+        self.edge_status_label = QLabel('边缘状态: - (置信度: -%)')
         self.top48_avg_label = QLabel('Top48均值: -')
         self.rest_avg_label = QLabel('其余均值: -')
-        self.difference_percentage_label = QLabel('差值百分比: -')
         self.top48_median_label = QLabel('Top48中位数: -')
         self.rest_median_label = QLabel('其余中位数: -')
-        self.difference_percentage_median_label = QLabel('中位数差值百分比: -')
         
+        metrics_frame.add_widget(self.bed_status_label)
+        metrics_frame.add_widget(self.edge_status_label)
         metrics_frame.add_widget(self.top48_avg_label)
         metrics_frame.add_widget(self.rest_avg_label)
-        metrics_frame.add_widget(self.difference_percentage_label)
         metrics_frame.add_widget(self.top48_median_label)
         metrics_frame.add_widget(self.rest_median_label)
-        metrics_frame.add_widget(self.difference_percentage_median_label)
         
         left_panel.addWidget(metrics_frame)
 
@@ -269,15 +269,14 @@ class DataCollectionGUI(QWidget):
         self.confidence_label.setText(f'置信度: {confidence:.2f}')
         self.timestamp_label.setText(f'最后更新时间: {timestamp}')
 
-    def update_metrics(self, top48_avg, rest_avg, difference_percentage, top48_median, rest_median, difference_percentage_median):
-        # print(f"Updating metrics in GUI")
+    def update_metrics(self, bed_status, edge_status, top48_avg, rest_avg, top48_median, rest_median):
+        self.bed_status_label.setText(f'床上状态: {bed_status[0]} (置信度: {bed_status[1]:.2f}%)')
+        self.edge_status_label.setText(f'边缘状态: {edge_status[0]} (置信度: {edge_status[1]:.2f}%)')
         self.top48_avg_label.setText(f'Top48均值: {top48_avg:.2f}')
         self.rest_avg_label.setText(f'其余均值: {rest_avg:.2f}')
-        self.difference_percentage_label.setText(f'差值百分比: {difference_percentage:.2f}%')
         self.top48_median_label.setText(f'Top48中位数: {top48_median:.2f}')
         self.rest_median_label.setText(f'其余中位数: {rest_median:.2f}')
-        self.difference_percentage_median_label.setText(f'中位数差值百分比: {difference_percentage_median:.2f}%')
-
+    
     def save_collected_data(self):
         if self.collected_data:
             print(f"Data to be saved: {len(self.collected_data)} entries")
