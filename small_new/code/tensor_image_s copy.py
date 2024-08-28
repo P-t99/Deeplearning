@@ -52,7 +52,7 @@ inference_results = Queue(maxsize=1)  # 存储最新的推理结果，队列大�
 metrics_results = Queue(maxsize=1)  # 存储最新的指标计算结果，队列大小为1
 
 # 加载训练好的TensorFlow模型
-model = tf.saved_model.load(r'D:\repository\deeplearning\small\Data\tensorflow\ncz\1')
+model = tf.saved_model.load(r'D:\repository\deeplearning\small_new\Data\tensorflow\ncz\1')
 logging.info("模型加载成功")  # 打印模型加载成功的日志信息
 
 
@@ -63,7 +63,7 @@ class MatrixMetrics:
     def __init__(self):
         self.bed_status = ("", 0)  # 在床/离床状态
         self.edge_status = ("", 0)  # 坠床/坐床边状态
-        self.top48_avg = 0
+        self.centroid = (0, 0)  # 重心坐标
         self.rest_avg = 0
         self.top48_median = 0
         self.rest_median = 0
@@ -75,6 +75,9 @@ class MatrixMetrics:
 
         # 计算坠床/坐床边状态
         centroid = self.calculate_weighted_centroid(matrix)
+        #赋值给self.centroid,转化为元组,横纵坐标+1
+        self.centroid = tuple(map(lambda x: x+1, centroid))
+        
         if centroid[1] < 4 or centroid[1] >= 6:
             features = self.extract_features(matrix)
             probability = self.embedded_system_logic(features)
@@ -87,7 +90,7 @@ class MatrixMetrics:
         flat_matrix = matrix.flatten()
         sorted_matrix = np.sort(flat_matrix)[::-1]
 
-        self.top48_avg = np.mean(sorted_matrix[:48]) if len(sorted_matrix) >= 48 else 0
+        # self.top48_avg = np.mean(sorted_matrix[:48]) if len(sorted_matrix) >= 48 else 0
         self.rest_avg = np.mean(sorted_matrix[48:]) if len(sorted_matrix) > 48 else 0
         
         self.top48_median = np.median(sorted_matrix[:48]) if len(sorted_matrix) >= 48 else 0
@@ -144,7 +147,7 @@ class MatrixMetrics:
         return {
             "bed_status": self.bed_status,
             "edge_status": self.edge_status,
-            "top48_avg": self.top48_avg,
+            "centroid": self.centroid,
             "rest_avg": self.rest_avg,
             "top48_median": self.top48_median,
             "rest_median": self.rest_median
@@ -205,7 +208,7 @@ def home():
                             document.getElementById('metrics').innerHTML = `
                                 <p>床上状态: ${data.bed_status[0]} (计算比例: ${data.bed_status[1].toFixed(2)}%)</p>
                                 <p>边缘状态: ${data.edge_status[0]} (置信度: ${data.edge_status[1].toFixed(2)}%)</p>
-                                <p>Top48均值: ${data.top48_avg.toFixed(2)}</p>
+                                <p>重心坐标: (${data.centroid[0].toFixed(2)}, ${data.centroid[1].toFixed(2)})</p>
                                 <p>其余均值: ${data.rest_avg.toFixed(2)}</p>
                                 <p>Top48中位数: ${data.top48_median.toFixed(2)}</p>
                                 <p>其余中位数: ${data.rest_median.toFixed(2)}</p>
@@ -268,7 +271,7 @@ def get_latest():
         "heatmap_timestamp": heatmap_timestamp, 
         "bed_status": metrics.get("bed_status", ("", 0)),
         "edge_status": metrics.get("edge_status", ("", 0)),
-        "top48_avg": metrics.get("top48_avg", 0),
+        "centroid": metrics.get("centroid", (0, 0)),
         "rest_avg": metrics.get("rest_avg", 0),
         "top48_median": metrics.get("top48_median", 0),
         "rest_median": metrics.get("rest_median", 0)
@@ -355,26 +358,41 @@ def read_matrix_from_serial(ser):
 
     return None  # 如果没有完整的数据包，返回None
 
+# 在全局范围内创建 MatrixMetrics 实例
+matrix_metrics = MatrixMetrics()
+
 def update_heatmap(matrix, top_n=64):
     global latest_heatmap, heatmap_timestamp, heatmap_fig, heatmap_ax, heatmap_colorbar
 
     with heatmap_lock:  # 使用锁来确保热力图更新时的线程安全
         heatmap_ax.clear()  # 清除当前的热力图
 
-        cax = heatmap_ax.imshow(matrix, cmap='viridis', interpolation='nearest', aspect=1.5)  # 显示新的矩阵热力图
+        cax = heatmap_ax.imshow(matrix, cmap='viridis', interpolation='nearest', aspect=1.2)  # 显示新的矩阵热力图
         
         if heatmap_colorbar is None:
             heatmap_colorbar = heatmap_fig.colorbar(cax, ax=heatmap_ax, label='压力值')  # 如果颜色条不存在，创建一个新的
         else:
             heatmap_colorbar.update_normal(cax)  # 如果颜色条已存在，更新其数据
 
+        # 获取矩阵的维度
+        height, width = matrix.shape
+
+        # 设置刻度标签，使其从1开始
+        heatmap_ax.set_xticks(range(width))
+        heatmap_ax.set_yticks(range(height))
+        heatmap_ax.set_xticklabels(range(1, width + 1))
+        heatmap_ax.set_yticklabels(range(1, height + 1))
+        
+        
         flat_indices = np.argsort(matrix.flatten())[-top_n:]  # 获取矩阵中值最大的前top_n个点的索引
         top_points = np.array(np.unravel_index(flat_indices, matrix.shape)).T  # 将一维索引转换为二维坐标
 
-        point_values = matrix[top_points[:, 0], top_points[:, 1]]  # 获取这些点对应的值
-        total_weight = np.sum(point_values)  # 计算这些点的总权重
-        centroid = np.sum(top_points * point_values[:, np.newaxis], axis=0) / total_weight  # 计算质心（加权平均）
-
+        # point_values = matrix[top_points[:, 0], top_points[:, 1]]  # 获取这些点对应的值
+        # total_weight = np.sum(point_values)  # 计算这些点的总权重
+        # centroid = np.sum(top_points * point_values[:, np.newaxis], axis=0) / total_weight  # 计算质心（加权平均）
+            # 使用 MatrixMetrics 的方法计算重心
+            
+        centroid = matrix_metrics.calculate_weighted_centroid(matrix, top_n)
         # 使用PCA计算主方向
         pca = PCA(n_components=1)
         pca.fit(top_points)
@@ -542,7 +560,7 @@ class InferenceThread(QThread):
         self.wait()  # 等待线程安全退出
 
 class MetricsCalculationThread(QThread):
-    metrics_ready = pyqtSignal(tuple, tuple, float, float, float, float)  # 定义一个信号，当计算完成时发出
+    metrics_ready = pyqtSignal(tuple, tuple, tuple, float, float, float)  # 定义一个信号，当计算完成时发出
 
     def __init__(self, calculation_interval, parent=None):
         super().__init__(parent)
@@ -566,7 +584,7 @@ class MetricsCalculationThread(QThread):
                 self.metrics_ready.emit(
                     metrics['bed_status'],
                     metrics['edge_status'],
-                    metrics['top48_avg'],
+                    metrics['centroid'],
                     metrics['rest_avg'],
                     metrics['top48_median'],
                     metrics['rest_median']

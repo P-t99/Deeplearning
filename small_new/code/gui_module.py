@@ -108,14 +108,14 @@ class DataCollectionGUI(QWidget):
         metrics_frame = QCollapsibleFrame("矩阵指标")
         self.bed_status_label = QLabel('床上状态: - (置信度: -%)')
         self.edge_status_label = QLabel('边缘状态: - (置信度: -%)')
-        self.top48_avg_label = QLabel('Top48均值: -')
+        self.centroid_label = QLabel('质心坐标: -')
         self.rest_avg_label = QLabel('其余均值: -')
         self.top48_median_label = QLabel('Top48中位数: -')
         self.rest_median_label = QLabel('其余中位数: -')
         
         metrics_frame.add_widget(self.bed_status_label)
         metrics_frame.add_widget(self.edge_status_label)
-        metrics_frame.add_widget(self.top48_avg_label)
+        metrics_frame.add_widget(self.centroid_label)
         metrics_frame.add_widget(self.rest_avg_label)
         metrics_frame.add_widget(self.top48_median_label)
         metrics_frame.add_widget(self.rest_median_label)
@@ -269,10 +269,10 @@ class DataCollectionGUI(QWidget):
         self.confidence_label.setText(f'置信度: {confidence:.2f}')
         self.timestamp_label.setText(f'最后更新时间: {timestamp}')
 
-    def update_metrics(self, bed_status, edge_status, top48_avg, rest_avg, top48_median, rest_median):
+    def update_metrics(self, bed_status, edge_status, centroid,  rest_avg, top48_median, rest_median):
         self.bed_status_label.setText(f'床上状态: {bed_status[0]} (计算比例: {bed_status[1]:.2f}%)')
         self.edge_status_label.setText(f'边缘状态: {edge_status[0]} (置信度: {edge_status[1]:.2f}%)')
-        self.top48_avg_label.setText(f'Top48均值: {top48_avg:.2f}')
+        self.centroid_label.setText(f'质心坐标：({centroid[0]:.2f}, {centroid[1]:.2f})')
         self.rest_avg_label.setText(f'其余均值: {rest_avg:.2f}')
         self.top48_median_label.setText(f'Top48中位数: {top48_median:.2f}')
         self.rest_median_label.setText(f'其余中位数: {rest_median:.2f}')
@@ -360,9 +360,9 @@ class DataCollectionGUI(QWidget):
     def update_heatmap(self, matrix, top_points, centroid, direction_vector, angle, timestamp):
         # print(f"Updating heatmap in GUI")
         self.ax.clear()
-        
+        height, width = matrix.shape
         # 绘制完整的热力图
-        cax = self.ax.imshow(matrix, cmap='viridis', interpolation='nearest', aspect=1.5)
+        cax = self.ax.imshow(matrix, cmap='viridis', interpolation='nearest', aspect=1.2)
 
         # 只在第一次创建颜色条或者颜色条不存在时创建
         if self.heatmap_colorbar is None:
@@ -370,6 +370,13 @@ class DataCollectionGUI(QWidget):
         else:
             self.heatmap_colorbar.update_normal(cax)
 
+        
+        # 设置刻度标签，使其从1开始
+        self.ax.set_xticks(range(width))
+        self.ax.set_yticks(range(height))
+        self.ax.set_xticklabels(range(1, width + 1))
+        self.ax.set_yticklabels(range(1, height + 1))
+        
         if top_points is not None and centroid is not None and direction_vector is not None:
             # 裁剪线段以确保不会超出热力图范围
             height, width = matrix.shape
@@ -441,7 +448,7 @@ class DataCollectionGUI(QWidget):
         heatmap_width = self.canvas.width()
         heatmap_height = self.canvas.height()
         if heatmap_width > 0 and heatmap_height > 0:
-            aspect_ratio = 1.5  # 与热力图相同的宽高比
+            aspect_ratio = 1.2  # 与热力图相同的宽高比
             matrix_width = int(heatmap_height * aspect_ratio)
             self.matrix_frame.setFixedWidth(min(matrix_width, heatmap_width))
 
