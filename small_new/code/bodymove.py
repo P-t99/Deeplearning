@@ -13,10 +13,10 @@ from matplotlib.animation import FuncAnimation
 
 # 设置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
+ylimnum = 10
 # 全局变量
 matrix_buffer = deque(maxlen=100)  # 存储最近100帧的矩阵数据
-l2_norm_buffer = np.zeros((120, 5))  # 120x5的buffer，存储L2范数信息
+diff_sum_buffer = np.zeros((120, 5))  # 120x5的buffer，存储差值和信息
 running = True
 exit_event = Event()
 data_lock = Lock()
@@ -62,26 +62,24 @@ def read_matrix_from_serial(ser):
                         return np.vstack((img_data[8:16, :10], img_data[7::-1, :10]))
     return None
 
-def normalize_matrix(matrix):
-    """Normalize the matrix from 0-255 to 0-1 range"""
-    return matrix.astype(float) / 255.0
+def pool_matrix(matrix):
+    """Pool 16x10 matrix to 8x5"""
+    return matrix.reshape(8, 2, 5, 2).mean(axis=(1, 3))
 
-def calculate_l2_norm(matrix1, matrix2):
-    norms = []
-    for i in range(0, 10, 2):
-        col1 = np.concatenate((matrix1[:, i], matrix1[:, i+1]))
-        col2 = np.concatenate((matrix2[:, i], matrix2[:, i+1]))
-        norms.append(np.linalg.norm(col1 - col2))
-    return norms
+def calculate_diff_sum(matrix1, matrix2):
+    """Calculate frame difference sum for each column"""
+    # return np.sum(np.abs(matrix2 - matrix1), axis=0)
+    return np.sqrt(np.sum((matrix2 - matrix1) ** 2, axis=0))
 
-def update_l2_norm_buffer(new_norms):
-    global l2_norm_buffer
+
+def update_diff_sum_buffer(new_diffs):
+    global diff_sum_buffer
     with data_lock:
-        l2_norm_buffer = np.roll(l2_norm_buffer, -1, axis=0)
-        l2_norm_buffer[-1] = new_norms
+        diff_sum_buffer = np.roll(diff_sum_buffer, -1, axis=0)
+        diff_sum_buffer[-1] = new_diffs
 
 def data_collection_thread():
-    global matrix_buffer, running, l2_norm_buffer
+    global matrix_buffer, running, diff_sum_buffer
     ser = setup_serial_port()
     if ser is None:
         return
@@ -94,16 +92,16 @@ def data_collection_thread():
         try:
             matrix = read_matrix_from_serial(ser)
             if matrix is not None:
-                normalized_matrix = normalize_matrix(matrix)
+                pooled_matrix = pool_matrix(matrix)
                 with data_lock:
-                    matrix_buffer.append(normalized_matrix)
+                    matrix_buffer.append(pooled_matrix)
                 frame_count += 1
 
                 if last_matrix is not None:
-                    l2_norms = calculate_l2_norm(last_matrix, normalized_matrix)
-                    update_l2_norm_buffer(l2_norms)
+                    diff_sums = calculate_diff_sum(last_matrix, pooled_matrix)
+                    update_diff_sum_buffer(diff_sums)
 
-                last_matrix = normalized_matrix
+                last_matrix = pooled_matrix
 
                 current_time = time.time()
                 elapsed_time = current_time - start_time
@@ -122,18 +120,27 @@ def data_collection_thread():
 
         if exit_event.is_set():
             break
+        
+def smooth_data(data, window_size=6):
+    """Apply moving average smoothing to the data."""
+    return np.convolve(data, np.ones(window_size)/window_size, mode='same')
 
 def update_plot(frame):
     with data_lock:
-        data = l2_norm_buffer.copy()
-    
+        data = diff_sum_buffer.copy()
+
+    # 对每一列数据进行平滑处理
+    smoothed_data = np.apply_along_axis(smooth_data, 0, data)
+
     for i, line in enumerate(lines):
-        line.set_data(range(len(data)), data[:, i])
-        axes.flatten()[i].relim()
-        axes.flatten()[i].autoscale_view()
-        axes.flatten()[i].set_title(f'L2 Norm for Columns {i*2+1}-{i*2+2}')
-        axes.flatten()[i].set_xlabel('Time')
-        axes.flatten()[i].set_ylabel('L2 Norm')
+        line.set_data(range(len(smoothed_data)), smoothed_data[:, i])
+        ax = axes.flatten()[i]
+        ax.relim()
+        ax.autoscale_view()
+        ax.set_ylim(0, ylimnum)
+        ax.set_title(f'Frame Diff Sum for Column {i+1}')
+        ax.set_xlabel('Sample Index')
+        ax.set_ylabel('Sum of Absolute Differences')
     
     return lines
 
@@ -144,6 +151,9 @@ def main():
 
     data_thread = Thread(target=data_collection_thread)
     data_thread.start()
+    # 初始化Y轴范围
+    for ax in axes.flatten()[:5]:
+        ax.set_ylim(0, ylimnum)
 
     ani = FuncAnimation(fig, update_plot, interval=1000, blit=True)
 
@@ -159,3 +169,4 @@ def main():
 if __name__ == "__main__":
     main()
     print("程序已成功退出")
+    
