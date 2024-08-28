@@ -31,6 +31,7 @@ plt.rcParams['axes.unicode_minus'] = False  # 解决Matplotlib无法正常显示
 # 设置日志格式和级别
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+
 # 全局变量定义
 global matrix_buffer, latest_prediction, latest_heatmap, heatmap_timestamp, running, exit_event, ser, alld, posture_labels
 matrix_buffer = deque(maxlen=100)  # 存储最近100帧的矩阵数据，用于推理
