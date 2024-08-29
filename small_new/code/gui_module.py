@@ -335,7 +335,7 @@ class DataCollectionGUI(QWidget):
     def update_playback(self):
         if self.playback_index < len(self.playback_data):
             timestamp, matrix_str = self.playback_data[self.playback_index]
-            matrix = np.array(eval(matrix_str)).reshape((32, 32))
+            matrix = np.array(eval(matrix_str)).reshape((16, 10))
             self.playback_window.update_heatmap(matrix)
             self.update_matrix_display(matrix)
             self.playback_index += 1
@@ -347,7 +347,7 @@ class DataCollectionGUI(QWidget):
         self.playback_index = self.playback_slider.value()
         if self.playback_index < len(self.playback_data):
             timestamp, matrix_str = self.playback_data[self.playback_index]
-            matrix = np.array(eval(matrix_str)).reshape((32, 32))
+            matrix = np.array(eval(matrix_str)).reshape((16, 10))
             self.playback_window.update_heatmap(matrix)
             self.update_matrix_display(matrix)
 

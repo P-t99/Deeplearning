@@ -18,7 +18,7 @@ from sklearn.decomposition import PCA  # 导入主成分分析 (PCA) 模块，�
 import io  # 提供操作流的工具，如内存中的文件
 from queue import Queue  # 提供线程安全的队列
 from collections import deque  # 提供双端队列，用于高效的插入和删除操作
-
+from queue import Queue, Empty
 from PyQt5.QtWidgets import QApplication  # 用于创建PyQt5应用程序的入口
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer  # 提供线程、信号槽、定时器等功能
 from PyQt5.QtGui import QFont  # 提供字体支持
@@ -63,27 +63,102 @@ logging.info("模型加载成功")  # 打印模型加载成功的日志信息
 # Flask应用初始化
 app = Flask(__name__)  # 创建Flask应用
 
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtCore import QThread, pyqtSignal, QTimer, Qt
+
+class PlotWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.layout = QVBoxLayout()
+        self.label = QLabel()
+        self.layout.addWidget(self.label)
+        self.setLayout(self.layout)
+
+    def update_plot(self, plot_image):
+        height, width, channel = plot_image.shape
+        bytes_per_line = 3 * width
+        q_image = QImage(plot_image.data, width, height, bytes_per_line, QImage.Format_RGB888)
+        pixmap = QPixmap.fromImage(q_image)
+        self.label.setPixmap(pixmap.scaled(800, 600, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtWidgets import QWidget, QVBoxLayout
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+import time
+from queue import Queue
+
 class MovementDetectionThread(QThread):
     update_movement_plot = pyqtSignal(object)
-    global matrix_buffer
-    def __init__(self, parent=None):
+
+    def __init__(self, parent=None, show_local_plot=False):
         super().__init__(parent)
         self.data_collector = DataCollector(ylimnum=10)
         self.data_visualizer = DataVisualizer(self.data_collector)
+        self.running = True
+        self.data_queue = Queue()
+        self.show_local_plot = show_local_plot
+        self.local_plot_window = None
+        self.last_update_time = 0
+
+        if self.show_local_plot:
+            self.setup_local_plot_window()
+
+    def setup_local_plot_window(self):
+        self.local_plot_window = QWidget()
+        layout = QVBoxLayout()
+        self.figure = Figure(figsize=(10, 8))
+        self.canvas = FigureCanvas(self.figure)
+        layout.addWidget(self.canvas)
+        self.local_plot_window.setLayout(layout)
+        self.local_plot_window.setWindowTitle("体动检测图")
+        self.local_plot_window.show()
 
     def run(self):
-        
-        self.data_collector.start_collection(matrix_buffer)
-        while running:
-            plot_image = self.data_visualizer.get_plot_image()
-            self.update_movement_plot.emit(plot_image)
-            self.msleep(1000)  # 每秒更新一次
+        while self.running:
+            if not self.data_queue.empty():
+                # 处理队列中的所有新数据
+                while not self.data_queue.empty():
+                    new_matrix = self.data_queue.get()
+                    self.data_collector.process_matrix(new_matrix)
+                
+                current_time = time.time()
+                if current_time - self.last_update_time >= 1:  # 每秒更新一次
+                    # 生成并发送图像更新
+                    plot_image = self.data_visualizer.get_plot_image()
+                    self.update_movement_plot.emit(plot_image)
 
-        self.data_collector.stop_collection()
+                    if self.show_local_plot and self.local_plot_window:
+                        self.update_local_plot(plot_image)
+
+                    self.last_update_time = current_time
+            
+            # 短暂休眠以避免过度消耗CPU
+            time.sleep(0.01)
+
+    def update_local_plot(self, plot_image):
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+        ax.imshow(plot_image)
+        self.canvas.draw()
 
     def stop(self):
-        self.data_collector.stop_collection()
+        self.running = False
+        if self.local_plot_window:
+            self.local_plot_window.close()
         self.wait()
+
+    def add_new_data(self, new_data):
+        self.data_queue.put(new_data)
+
+    def toggle_local_plot(self, show):
+        self.show_local_plot = show
+        if show and not self.local_plot_window:
+            self.setup_local_plot_window()
+        elif not show and self.local_plot_window:
+            self.local_plot_window.close()
+            self.local_plot_window = None
 
 class MatrixMetrics:
     def __init__(self):
@@ -104,13 +179,26 @@ class MatrixMetrics:
         #赋值给self.centroid,转化为元组,横纵坐标+1
         self.centroid = tuple(map(lambda x: x+1, centroid))
         
-        if centroid[1] < 4 or centroid[1] >= 6:
-            features = self.extract_features(matrix)
-            probability = self.embedded_system_logic(features)
-            status = "坠床风险" if probability > 0.5 else "坐床边"
+        features = self.extract_features(matrix)
+        probability = self.embedded_system_logic(features)
+        
+        if centroid[1] < 3 or centroid[1] > 7:
+            if probability > 0.5:
+                status = "坠床风险"
+            else:
+                status = "坐床边"
             self.edge_status = (status, max(probability, 1 - probability) * 100)
+        elif centroid[1] < 4 or centroid[1] >= 6:
+            if probability < 0.5:
+                status = "坐床边"
+                self.edge_status = (status, max(probability, 1 - probability) * 100)
+            else:
+                status = "正常"
+                self.edge_status = ("正常", 100)
         else:
+            status = "正常"
             self.edge_status = ("正常", 100)
+        
 
         # 计算其他指标
         flat_matrix = matrix.flatten()
@@ -137,6 +225,7 @@ class MatrixMetrics:
         return harmonic_mean / 255
 
     def calculate_weighted_centroid(self, matrix, top_n=64):
+        top_n = 20
         reshaped_matrix = matrix.reshape(16, 10)
         flat_indices = np.argsort(reshaped_matrix.flatten())[-top_n:]
         top_points = np.array(np.unravel_index(flat_indices, reshaped_matrix.shape)).T
@@ -148,16 +237,16 @@ class MatrixMetrics:
     def extract_features(self, matrix):
         flat_matrix = matrix.flatten()
         
-        top64_indices = np.argsort(flat_matrix)[-64:]
+        top64_indices = np.argsort(flat_matrix)[-32:]
         top64_values = flat_matrix[top64_indices]
-        valid_top64_indices = top64_indices[top64_values > 5]
+        valid_top64_indices = top64_indices[top64_values > 10]
         valid_top64_rows = valid_top64_indices // matrix.shape[1]
         unique_valid_top64_rows = np.unique(valid_top64_rows)
         
         min_val, max_val = np.min(flat_matrix), np.max(flat_matrix)
         threshold = min_val + 0.5 * (max_val - min_val)
         
-        above_threshold_indices = np.where((flat_matrix >= threshold) & (flat_matrix > 5))[0]
+        above_threshold_indices = np.where((flat_matrix >= threshold) & (flat_matrix > 10))[0]
         above_threshold_rows = above_threshold_indices // matrix.shape[1]
         unique_above_threshold_rows = np.unique(above_threshold_rows)
         
@@ -213,17 +302,18 @@ def home():
                 #result { font-size: 24px; margin-bottom: 20px; color: #333; }
                 #timestamp { font-size: 14px; color: #666; margin-bottom: 20px; }
                 #metrics, #results { font-size: 16px; color: #333; text-align: left; }
-                #heatmap, #movement-plot { max-width: 100%; height: auto; margin-top: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+                #heatmap { max-width: 100%; height: auto; margin-top: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
                 #ip-addresses { font-size: 16px; margin-top: 20px; color: #333; }
                 .toggle-btn { background-color: #4CAF50; border: none; color: white; padding: 5px 10px; text-align: center; text-decoration: none; display: inline-block; font-size: 14px; margin: 4px 2px; cursor: pointer; border-radius: 4px; }
+                #movement-plot-container { max-height: 800px; overflow-y: auto; margin-top: 20px; }
+                #movement-plot { width: 100%; height: auto; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
             </style>
             <script>
                 function toggleSection(sectionId) {
-                    // 切换页面中的某个部分的显示/隐藏状态
                     const content = document.getElementById(sectionId);
-                    content.classList.toggle('collapsed');  // 切换CSS类名，以改变显示状态
+                    content.classList.toggle('collapsed');
                     const btn = content.previousElementSibling.querySelector('.toggle-btn');
-                    btn.textContent = content.classList.contains('collapsed') ? '展开' : '折叠';  // 更新按钮的文本
+                    btn.textContent = content.classList.contains('collapsed') ? '展开' : '折叠';
                 }
 
                 function updateResult() {
@@ -248,13 +338,13 @@ def home():
                     document.getElementById('movement-plot').src = '/get_movement_plot?' + new Date().getTime();
                 }
 
-                setInterval(updateResult, 1500);  // 每隔1.5秒更新一次结果
-                setInterval(updateMovementPlot, 1000);  // 每秒更新一次体动图
+                setInterval(updateResult, 1500);
+                setInterval(updateMovementPlot, 1000);
             </script>
         </head>
         <body>
             <div class="container">
-                <h1>睡姿预测结果</h1>
+                <h1>算法预测结果</h1>
                 <div class="section">
                     <div class="section-header">
                         <h2>数据指标</h2>
@@ -281,15 +371,19 @@ def home():
                         <button class="toggle-btn" onclick="toggleSection('movement-plot-content')">折叠</button>
                     </div>
                     <div id="movement-plot-content" class="section-content">
-                        <img id="movement-plot" src="/get_movement_plot" alt="体动检测图">
+                        <div id="movement-plot-container">
+                            <img id="movement-plot" src="/get_movement_plot" alt="体动检测图">
+                        </div>
                     </div>
                 </div>
+                <!-- 
                 <div id="ip-addresses">
                     <p>可用的访问地址:</p>
                     {% for ip in ip_addresses %}
                         <p>http://{{ip}}:5000</p>
                     {% endfor %}
                 </div>
+                -->
             </div>
         </body>
         </html>
@@ -310,12 +404,12 @@ def get_latest():
     global latest_prediction, heatmap_timestamp
     try:
         current_prediction = inference_results.get(block=False)
-    except Queue.Empty:
+    except Empty:
         current_prediction = latest_prediction
     
     try:
         metrics = metrics_results.get(block=False)
-    except Queue.Empty:
+    except Empty:
         metrics = {}
     
     return jsonify({
@@ -443,7 +537,7 @@ def update_heatmap(matrix, top_n=64):
         # total_weight = np.sum(point_values)  # 计算这些点的总权重
         # centroid = np.sum(top_points * point_values[:, np.newaxis], axis=0) / total_weight  # 计算质心（加权平均）
             # 使用 MatrixMetrics 的方法计算重心
-            
+        
         centroid = matrix_metrics.calculate_weighted_centroid(matrix, top_n)
         # 使用PCA计算主方向
         pca = PCA(n_components=1)
@@ -729,10 +823,8 @@ def main():
     inference_thread = InferenceThread(inference_interval=0.5)
     metrics_thread = MetricsCalculationThread(calculation_interval=0.5)
     ui_update_thread = UIUpdateThread(update_interval=0.5)
-        # 创建和启动体动检测线程
+    # 创建和启动体动检测线程
     movement_detection_thread = MovementDetectionThread()
-    movement_detection_thread.start()
-    # movement_detection_thread.update_movement_plot.connect(gui.update_movement_plot)
 
     threads = [data_collection_thread, inference_thread, metrics_thread, ui_update_thread, movement_detection_thread]
 
@@ -745,6 +837,12 @@ def main():
     ui_update_thread.matrix_ready.connect(gui.update_heatmap)
     metrics_thread.metrics_ready.connect(gui.update_metrics)
 
+    # 新增：连接数据收集线程到体动检测线程
+    # 连接数据收集线程到体动检测线程
+    data_collection_thread.new_data_signal.connect(movement_detection_thread.add_new_data)
+
+    # 新增：连接体动检测线程到GUI的更新函数
+    # movement_detection_thread.update_movement_plot.connect(gui.update_movement_plot)
     # 处理GUI信号
     gui.start_collection.connect(lambda: setattr(gui, 'collecting', True))  # 开始数据收集
     gui.pause_collection.connect(lambda: setattr(gui, 'paused', True))  # 暂停数据收集
