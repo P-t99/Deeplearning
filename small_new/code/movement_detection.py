@@ -7,11 +7,9 @@ from collections import deque
 from threading import Thread, Event, Lock
 import logging
 import matplotlib
-matplotlib.use('TkAgg')
-from matplotlib.animation import FuncAnimation
-
-# 设置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+matplotlib.use('Agg')  # 使用非交互式后端
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
 class SerialMatrixReader:
     def __init__(self):
@@ -61,9 +59,9 @@ class DataCollector:
         self.running = True
         self.exit_event = Event()
         self.data_lock = Lock()
-        self.serial_reader = SerialMatrixReader()
+        # self.serial_reader = SerialMatrixReader()
         self.ylimnum = ylimnum
-
+        self.matrix = None
     def pool_matrix(self, matrix):
         """Pool 16x10 matrix to 8x5"""
         return matrix.reshape(8, 2, 5, 2).mean(axis=(1, 3))
@@ -78,16 +76,16 @@ class DataCollector:
             self.diff_sum_buffer[-1] = new_diffs
 
     def data_collection_thread(self):
-        if not self.serial_reader.setup_serial_port():
-            return
+        # if not self.serial_reader.setup_serial_port():
+        #     return
 
         start_time = time.time()
         frame_count = 0
         last_matrix = None
 
-        while self.running:
+        while self.running and self.matrix:
             try:
-                matrix = self.serial_reader.read_matrix_from_serial()
+                matrix = self.matrix[-1]
                 if matrix is not None:
                     pooled_matrix = self.pool_matrix(matrix)
                     with self.data_lock:
@@ -121,23 +119,32 @@ class DataCollector:
         """Apply moving average smoothing to the data."""
         return np.convolve(data, np.ones(window_size)/window_size, mode='same')
 
+    def start_collection(self,matrix):
+        self.matrix = matrix
+        self.data_thread = Thread(target=self.data_collection_thread)
+        self.data_thread.start()
+
+    def stop_collection(self):
+        self.running = False
+        self.exit_event.set()
+        if hasattr(self, 'data_thread'):
+            self.data_thread.join()
 
 class DataVisualizer:
     def __init__(self, data_collector):
         self.data_collector = data_collector
-        self.fig, self.axes = plt.subplots(5, 1, figsize=(10, 15))
+        self.fig = Figure(figsize=(10, 15))
+        self.axes = self.fig.subplots(5, 1)
         self.lines = [ax.plot([], [])[0] for ax in self.axes]
-        plt.tight_layout()
+        self.fig.tight_layout()
 
-        # 初始化Y轴范围
         for ax in self.axes:
             ax.set_ylim(0, self.data_collector.ylimnum)
 
-    def update_plot(self, frame):
+    def update_plot(self):
         with self.data_collector.data_lock:
             data = self.data_collector.diff_sum_buffer.copy()
 
-        # 对每一列数据进行平滑处理
         smoothed_data = np.apply_along_axis(self.data_collector.smooth_data, 0, data)
 
         for i, line in enumerate(self.lines):
@@ -146,36 +153,15 @@ class DataVisualizer:
             ax.relim()
             ax.autoscale_view()
             ax.set_ylim(0, self.data_collector.ylimnum)
-
-                # 使用 ax.text 将标题放置在图表下方
-            # ax.text(0.5, -0.2, f'Column {i+1}', fontsize=10, ha='center', transform=ax.transAxes)
             ax.set_xlabel('Sample Index')
             ax.set_ylabel(f'Column {i+1}')
 
-        return self.lines
+        return self.fig
 
-    def start_visualization(self):
-        ani = FuncAnimation(self.fig, self.update_plot, interval=1000, blit=True)
-        try:
-            plt.show()
-        except KeyboardInterrupt:
-            print("正在退出程序...")
-
-
-def main():
-    data_collector = DataCollector(ylimnum=10)
-
-    data_thread = Thread(target=data_collector.data_collection_thread)
-    data_thread.start()
-
-    visualizer = DataVisualizer(data_collector)
-    visualizer.start_visualization()
-
-    data_collector.running = False
-    data_collector.exit_event.set()
-    data_thread.join()
-
-
-if __name__ == "__main__":
-    main()
-    print("程序已成功退出")
+    def get_plot_image(self):
+        self.update_plot()
+        canvas = FigureCanvas(self.fig)
+        canvas.draw()
+        img = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8)
+        img = img.reshape(canvas.get_width_height()[::-1] + (3,))
+        return img

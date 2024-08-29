@@ -23,6 +23,9 @@ from PyQt5.QtWidgets import QApplication  # 用于创建PyQt5应用程序的入�
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer  # 提供线程、信号槽、定时器等功能
 from PyQt5.QtGui import QFont  # 提供字体支持
 from gui_module import run_gui  # 导入自定义的GUI模块，确保该模块在同一目录下
+from movement_detection import DataCollector, DataVisualizer
+import io
+from PIL import Image
 
 # 设置Matplotlib的中文字体支持
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 设置SimHei字体用于显示中文标签
@@ -59,6 +62,28 @@ logging.info("模型加载成功")  # 打印模型加载成功的日志信息
 
 # Flask应用初始化
 app = Flask(__name__)  # 创建Flask应用
+
+class MovementDetectionThread(QThread):
+    update_movement_plot = pyqtSignal(object)
+    global matrix_buffer
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.data_collector = DataCollector(ylimnum=10)
+        self.data_visualizer = DataVisualizer(self.data_collector)
+
+    def run(self):
+        
+        self.data_collector.start_collection(matrix_buffer)
+        while running:
+            plot_image = self.data_visualizer.get_plot_image()
+            self.update_movement_plot.emit(plot_image)
+            self.msleep(1000)  # 每秒更新一次
+
+        self.data_collector.stop_collection()
+
+    def stop(self):
+        self.data_collector.stop_collection()
+        self.wait()
 
 class MatrixMetrics:
     def __init__(self):
@@ -168,6 +193,7 @@ def get_ip_addresses():
 
 #flask路由主页
 @app.route('/')
+@app.route('/')
 def home():
     # 处理主页的HTTP请求，返回一个HTML页面
     ip_addresses = get_ip_addresses()  # 获取服务器的IP地址列表
@@ -187,7 +213,7 @@ def home():
                 #result { font-size: 24px; margin-bottom: 20px; color: #333; }
                 #timestamp { font-size: 14px; color: #666; margin-bottom: 20px; }
                 #metrics, #results { font-size: 16px; color: #333; text-align: left; }
-                #heatmap { max-width: 100%; height: auto; margin-top: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+                #heatmap, #movement-plot { max-width: 100%; height: auto; margin-top: 20px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
                 #ip-addresses { font-size: 16px; margin-top: 20px; color: #333; }
                 .toggle-btn { background-color: #4CAF50; border: none; color: white; padding: 5px 10px; text-align: center; text-decoration: none; display: inline-block; font-size: 14px; margin: 4px 2px; cursor: pointer; border-radius: 4px; }
             </style>
@@ -217,7 +243,13 @@ def home():
                             document.getElementById('heatmap').src = '/get_heatmap?' + new Date().getTime();
                         });
                 }
+
+                function updateMovementPlot() {
+                    document.getElementById('movement-plot').src = '/get_movement_plot?' + new Date().getTime();
+                }
+
                 setInterval(updateResult, 1500);  // 每隔1.5秒更新一次结果
+                setInterval(updateMovementPlot, 1000);  // 每秒更新一次体动图
             </script>
         </head>
         <body>
@@ -226,33 +258,52 @@ def home():
                 <div class="section">
                     <div class="section-header">
                         <h2>数据指标</h2>
-                        <button class="toggle-btn" onclick="toggleSection('metrics-content')">折叠</button>  <!-- 折叠/展开数据指标部分 -->
+                        <button class="toggle-btn" onclick="toggleSection('metrics-content')">折叠</button>
                     </div>
                     <div id="metrics-content" class="section-content">
-                        <div id="metrics"></div>  <!-- 显示数据指标的区域 -->
+                        <div id="metrics"></div>
                     </div>
                 </div>
                 <div class="section">
                     <div class="section-header">
                         <h2>预测结果</h2>
-                        <button class="toggle-btn" onclick="toggleSection('results-content')">折叠</button>  <!-- 折叠/展开预测结果部分 -->
+                        <button class="toggle-btn" onclick="toggleSection('results-content')">折叠</button>
                     </div>
                     <div id="results-content" class="section-content">
-                        <div id="result">加载中...</div>  <!-- 显示预测结果的区域 -->
-                        <div id="timestamp"></div>  <!-- 显示最后更新时间的区域 -->
-                        <img id="heatmap" src="/get_heatmap" alt="热力图">  <!-- 显示热力图的区域 -->
+                        <div id="result">加载中...</div>
+                        <div id="timestamp"></div>
+                        <img id="heatmap" src="/get_heatmap" alt="热力图">
+                    </div>
+                </div>
+                <div class="section">
+                    <div class="section-header">
+                        <h2>体动检测图</h2>
+                        <button class="toggle-btn" onclick="toggleSection('movement-plot-content')">折叠</button>
+                    </div>
+                    <div id="movement-plot-content" class="section-content">
+                        <img id="movement-plot" src="/get_movement_plot" alt="体动检测图">
                     </div>
                 </div>
                 <div id="ip-addresses">
                     <p>可用的访问地址:</p>
                     {% for ip in ip_addresses %}
-                        <p>http://{{ip}}:5000</p>  <!-- 显示服务器的可用IP地址 -->
+                        <p>http://{{ip}}:5000</p>
                     {% endfor %}
                 </div>
             </div>
         </body>
         </html>
     ''', ip_addresses=ip_addresses)  # 使用Jinja模板引擎生成HTML并渲染页面
+
+# 更新 Flask 路由
+@app.route('/get_movement_plot')
+def get_movement_plot():
+    global movement_detection_thread
+    plot_image = movement_detection_thread.data_visualizer.get_plot_image()
+    img_io = io.BytesIO()
+    Image.fromarray(plot_image).save(img_io, 'PNG')
+    img_io.seek(0)
+    return send_file(img_io, mimetype='image/png')
 
 @app.route('/get_latest')
 def get_latest():
@@ -661,7 +712,7 @@ def print_inference_results():
 
 def main():
     global alld, ser, latest_prediction, running, posture_labels, matrix_buffer
-
+    global running, matrix_buffer, latest_prediction, movement_detection_thread
     signal.signal(signal.SIGINT, signal_handler)  # 绑定SIGINT信号（如Ctrl+C）到自定义的信号处理函数
     signal.signal(signal.SIGTERM, signal_handler)  # 绑定SIGTERM信号到自定义的信号处理函数
     atexit.register(cleanup)  # 在程序退出时执行清理操作
@@ -678,8 +729,12 @@ def main():
     inference_thread = InferenceThread(inference_interval=0.5)
     metrics_thread = MetricsCalculationThread(calculation_interval=0.5)
     ui_update_thread = UIUpdateThread(update_interval=0.5)
+        # 创建和启动体动检测线程
+    movement_detection_thread = MovementDetectionThread()
+    movement_detection_thread.start()
+    # movement_detection_thread.update_movement_plot.connect(gui.update_movement_plot)
 
-    threads = [data_collection_thread, inference_thread, metrics_thread, ui_update_thread]
+    threads = [data_collection_thread, inference_thread, metrics_thread, ui_update_thread, movement_detection_thread]
 
     for thread in threads:
         thread.start()  # 启动所有线程
