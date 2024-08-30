@@ -32,6 +32,8 @@ def get_raw_data_from_csv(filepath, label, normalization=False, data_augmentatio
             y.append(1)
         elif data[label] == 3:
             y.append(2)
+        elif data[label] == 4:
+            y.append(3)
     x = np.array(x).astype(np.float32)
     y = np.array(y)
     return x, y
@@ -252,7 +254,7 @@ if __name__ == '__main__':
     test_path = "train.csv"
     outpath = 'Data'
     batch_size = 64
-    num_classes = 3
+    num_classes = 4
     epochs = 10
     n_splits = 5  # 5-fold cross-validation
     main(train_path, test_path, outpath, epochs, batch_size, num_classes, n_splits)
