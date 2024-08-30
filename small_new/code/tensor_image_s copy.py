@@ -178,11 +178,11 @@ class MatrixMetrics:
         centroid = self.calculate_weighted_centroid(matrix)
         #赋值给self.centroid,转化为元组,横纵坐标+1
         self.centroid = tuple(map(lambda x: x+1, centroid))
-        
+        centroid = self.centroid
         features = self.extract_features(matrix)
         probability = self.embedded_system_logic(features)
         
-        if centroid[1] < 3 or centroid[1] > 7:
+        if centroid[1] < 3.5 or centroid[1] > 6.5:
             if probability > 0.5:
                 status = "坠床风险"
             else:
@@ -215,7 +215,7 @@ class MatrixMetrics:
     def calculate_harmonic_mean(self, matrix):
         sorted_values = np.sort(matrix.flatten())[::-1]
         top_16_median = np.mean(sorted_values[:16])
-        top_32_median = np.mean(sorted_values[:32])
+        top_32_median = np.mean(sorted_values[:48])
         
         if top_16_median + top_32_median > 0:
             harmonic_mean = 2 * (top_16_median * top_32_median) / (top_16_median + top_32_median)
