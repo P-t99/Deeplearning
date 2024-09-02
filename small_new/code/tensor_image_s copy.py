@@ -172,7 +172,7 @@ class MatrixMetrics:
     def calculate(self, matrix):
         # 计算在床/离床状态
         ratio = self.calculate_harmonic_mean(matrix)
-        self.bed_status = ("在床" if ratio > 0.08 else "离床", ratio * 100)
+        self.bed_status = ("在床" if ratio > 0.15 else "离床", ratio * 100)
 
         # 计算坠床/坐床边状态
         centroid = self.calculate_weighted_centroid(matrix)
@@ -199,7 +199,8 @@ class MatrixMetrics:
             status = "正常"
             self.edge_status = ("正常", 100)
         
-
+        if ratio < 0.15:
+            self.edge_status = ("离床", 100)
         # 计算其他指标
         flat_matrix = matrix.flatten()
         sorted_matrix = np.sort(flat_matrix)[::-1]
@@ -320,7 +321,11 @@ def home():
                     fetch('/get_latest')
                         .then(response => response.json())
                         .then(data => {
-                            document.getElementById('result').innerText = `当前睡姿: ${data.posture} (置信度: ${data.confidence.toFixed(2)})`;
+                            if (data.bed_status[0] === "离床") {
+                                document.getElementById('result').innerText = `当前睡姿: 离床 (置信度: 1.00)`;
+                            } else {
+                                document.getElementById('result').innerText = `当前睡姿: ${data.posture} (置信度: ${data.confidence.toFixed(2)})`;
+                            }
                             document.getElementById('timestamp').innerText = `最后更新时间: ${new Date(data.timestamp * 1000).toLocaleString()}`;
                             document.getElementById('metrics').innerHTML = `
                                 <p>床上状态: ${data.bed_status[0]} (计算比例: ${data.bed_status[1].toFixed(2)}%)</p>

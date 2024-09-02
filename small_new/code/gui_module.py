@@ -270,6 +270,14 @@ class DataCollectionGUI(QWidget):
         self.timestamp_label.setText(f'最后更新时间: {timestamp}')
 
     def update_metrics(self, bed_status, edge_status, centroid,  rest_avg, top48_median, rest_median):
+        if bed_status[1] < 0.15:
+            posture = '离床'
+            confidence = 1.0
+        else:
+            posture = bed_status[0]
+            confidence = bed_status[1]
+        self.web_info_label.setText(f'当前睡姿: {posture}')
+        self.confidence_label.setText(f'置信度: {confidence:.2f}')
         self.bed_status_label.setText(f'床上状态: {bed_status[0]} (计算比例: {bed_status[1]:.2f}%)')
         self.edge_status_label.setText(f'边缘状态: {edge_status[0]} (置信度: {edge_status[1]:.2f}%)')
         self.centroid_label.setText(f'质心坐标：({centroid[0]:.2f}, {centroid[1]:.2f})')
