@@ -60,7 +60,7 @@ def get_data(filepath, label, normalization=False, shuffle=True, test_size=0.2, 
 import tensorflow as tf
 
 class KeepTop32(tf.keras.layers.Layer):
-    def __init__(self, k=64, **kwargs):
+    def __init__(self, k=48, **kwargs):
         super(KeepTop32, self).__init__(**kwargs)
         self.k = k
 
@@ -255,7 +255,7 @@ if __name__ == '__main__':
     outpath = 'Data'
     batch_size = 64
     num_classes = 4
-    epochs = 10
+    epochs = 20
     n_splits = 5  # 5-fold cross-validation
     main(train_path, test_path, outpath, epochs, batch_size, num_classes, n_splits)
     

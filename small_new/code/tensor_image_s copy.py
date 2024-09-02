@@ -46,7 +46,7 @@ running = True  # 标识程序的运行状态
 exit_event = Event()  # 用于控制程序的退出
 ser = None  # 串口对象初始化为空
 alld = np.array([], dtype=np.uint8)  # 初始化空的数组，用于接收串口数据
-posture_labels = ['平躺', '左侧卧', '右侧卧']  # 定义睡姿的标签
+posture_labels = ['平躺', '左侧卧', '右侧卧','坐起']  # 定义睡姿的标签
 
 # 创建热力图的Figure和Axes对象（在主线程中创建）
 heatmap_fig, heatmap_ax = plt.subplots(figsize=(10, 8))  # 创建一个10x8英寸的画布和子图
@@ -239,22 +239,22 @@ class MatrixMetrics:
         
         top64_indices = np.argsort(flat_matrix)[-32:]
         top64_values = flat_matrix[top64_indices]
-        valid_top64_indices = top64_indices[top64_values > 10]
+        valid_top64_indices = top64_indices[top64_values > 15]
         valid_top64_rows = valid_top64_indices // matrix.shape[1]
         unique_valid_top64_rows = np.unique(valid_top64_rows)
         
         min_val, max_val = np.min(flat_matrix), np.max(flat_matrix)
         threshold = min_val + 0.5 * (max_val - min_val)
         
-        above_threshold_indices = np.where((flat_matrix >= threshold) & (flat_matrix > 10))[0]
+        above_threshold_indices = np.where((flat_matrix >= threshold) & (flat_matrix > 15))[0]
         above_threshold_rows = above_threshold_indices // matrix.shape[1]
         unique_above_threshold_rows = np.unique(above_threshold_rows)
         
         return [len(unique_valid_top64_rows), len(unique_above_threshold_rows)]
 
     def embedded_system_logic(self, features):
-        coefficients = np.array([2.2440458, 1.79786801])
-        intercept = -29.922462671061126
+        coefficients = np.array([3.8018405 , 1.37787361])
+        intercept = -38.381913228471745
         log_odds = np.dot(features, coefficients) + intercept
         return 1 / (1 + np.exp(-log_odds))
 
@@ -812,7 +812,7 @@ def main():
     atexit.register(cleanup)  # 在程序退出时执行清理操作
 
     alld = np.array([], dtype=np.uint8)  # 初始化全局变量alld为空的uint8类型数组
-    posture_labels = ['平躺', '左侧卧', '右侧卧']  # 定义睡姿标签列表
+    posture_labels = ['平躺', '左侧卧', '右侧卧','坐起']  # 定义睡姿标签列表
 
     QApplication.setFont(QFont('Arial', 10))  # 设置PyQt5应用程序的默认字体
     app = QApplication(sys.argv)  # 创建PyQt5应用程序实例
