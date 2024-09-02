@@ -239,22 +239,22 @@ class MatrixMetrics:
         
         top64_indices = np.argsort(flat_matrix)[-32:]
         top64_values = flat_matrix[top64_indices]
-        valid_top64_indices = top64_indices[top64_values > 15]
+        valid_top64_indices = top64_indices[top64_values > 35]
         valid_top64_rows = valid_top64_indices // matrix.shape[1]
         unique_valid_top64_rows = np.unique(valid_top64_rows)
         
         min_val, max_val = np.min(flat_matrix), np.max(flat_matrix)
         threshold = min_val + 0.5 * (max_val - min_val)
         
-        above_threshold_indices = np.where((flat_matrix >= threshold) & (flat_matrix > 15))[0]
+        above_threshold_indices = np.where((flat_matrix >= threshold) & (flat_matrix > 35))[0]
         above_threshold_rows = above_threshold_indices // matrix.shape[1]
         unique_above_threshold_rows = np.unique(above_threshold_rows)
         
         return [len(unique_valid_top64_rows), len(unique_above_threshold_rows)]
 
     def embedded_system_logic(self, features):
-        coefficients = np.array([3.8018405 , 1.37787361])
-        intercept = -38.381913228471745
+        coefficients = np.array([4.59846052 ,1.42464485])
+        intercept = -43.540987268759594
         log_odds = np.dot(features, coefficients) + intercept
         return 1 / (1 + np.exp(-log_odds))
 
