@@ -669,6 +669,19 @@ class InferenceThread(QThread):
     def __init__(self, inference_interval, parent=None):
         super().__init__(parent)
         self.inference_interval = inference_interval  # 推理间隔时间（秒）
+        self.ratio = 0.0  # 初始化ratio变量，用于在离床判断
+        
+    def calculate_harmonic_mean(self, matrix):
+        sorted_values = np.sort(matrix.flatten())[::-1]
+        top_16_median = np.mean(sorted_values[:16])
+        top_32_median = np.mean(sorted_values[:48])
+        
+        if top_16_median + top_32_median > 0:
+            harmonic_mean = 2 * (top_16_median * top_32_median) / (top_16_median + top_32_median)
+        else:
+            harmonic_mean = 0
+        
+        return harmonic_mean / 255
 
     def run(self):
         global running, matrix_buffer, latest_prediction, inference_results
@@ -689,6 +702,11 @@ class InferenceThread(QThread):
                         "confidence": float(confidence),
                         "timestamp": current_time
                     }
+                    
+                    ratio = self.calculate_harmonic_mean(matrix)
+                    if ratio < 0.15:
+                        current_prediction = "离床"
+                        confidence = 1.0
 
                     while not inference_results.empty():
                         inference_results.get()  # 清空之前的推理结果队列
