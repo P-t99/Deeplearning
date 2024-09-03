@@ -269,8 +269,8 @@ if __name__ == '__main__':
     train_path = "train.csv"
     test_path = "train.csv"
     outpath = 'Data'
-    batch_size = 64
+    batch_size = 32
     num_classes = 4
-    epochs = 10
+    epochs = 20
     n_splits = 5  # 5-fold cross-validation
     main(train_path, test_path, outpath, epochs, batch_size, num_classes, n_splits)
