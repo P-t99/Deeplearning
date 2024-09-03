@@ -61,7 +61,7 @@ def get_data(filepath, label, normalization=False, shuffle=True, test_size=0.2, 
 import tensorflow as tf
 
 class KeepTop32(tf.keras.layers.Layer):
-    def __init__(self, k=48, **kwargs):
+    def __init__(self, k=400, **kwargs):
         super(KeepTop32, self).__init__(**kwargs)
         self.k = k
 
@@ -107,7 +107,7 @@ def res_block(x, channels, i):
 def build_model(input_shape, num_classes):
     inpt = Input(shape=input_shape)
     
-    x = Lambda(lambda y: tf.reshape(y, [-1, 16, 10, 1]))(inpt)
+    x = Lambda(lambda y: tf.reshape(y, [-1, 32, 32, 1]))(inpt)
     x = KeepTop32()(x)
     x = Lambda(lambda y: tfa.image.gaussian_filter2d(y, [3, 3], 1, padding='SYMMETRIC'))(x)
     x = Lambda(lambda y: tfa.image.sharpness(y, 0.15))(x)
@@ -216,7 +216,7 @@ def main(train_path, test_path, outpath, epochs, batch_size, num_classes, n_spli
         x_train_fold, x_val_fold = x_train[train_index], x_train[val_index]
         y_train_fold, y_val_fold = y_train[train_index], y_train[val_index]
 
-        model = build_model([160, 1], num_classes)
+        model = build_model([1024, 1], num_classes)
         
         if fold == 1:
             model.summary()
