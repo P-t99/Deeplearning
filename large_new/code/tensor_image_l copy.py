@@ -56,7 +56,7 @@ inference_results = Queue(maxsize=1)  # 存储最新的推理结果，队列大�
 metrics_results = Queue(maxsize=1)  # 存储最新的指标计算结果，队列大小为1
 
 # 加载训练好的TensorFlow模型
-model = tf.saved_model.load(r'D:\repository\deeplearning\small_new\Data\tensorflow\ncz\1')
+model = tf.saved_model.load(r'D:\repository\deeplearning\large_sit\Data\tensorflow\ncz\1')
 logging.info("模型加载成功")  # 打印模型加载成功的日志信息
 
 
@@ -121,7 +121,9 @@ class MovementDetectionThread(QThread):
                 # 处理队列中的所有新数据
                 while not self.data_queue.empty():
                     new_matrix = self.data_queue.get()
-                    self.data_collector.process_matrix(new_matrix)
+                    # 使用池化方法将矩阵池化为16x10
+                    pooled_matrix = vectorized_pooling(new_matrix, (2, 3))  # 假设原矩阵为32x30
+                    self.data_collector.process_matrix(pooled_matrix)
                 
                 current_time = time.time()
                 if current_time - self.last_update_time >= 1:  # 每秒更新一次
@@ -170,16 +172,19 @@ class MatrixMetrics:
         self.rest_median = 0
 
     def calculate(self, matrix):
+        # 将32x32矩阵池化为16x10
+        pooled_matrix = vectorized_pooling(matrix, (2, 3))  # 假设原矩阵为32x32，池化为16x10
+        
         # 计算在床/离床状态
-        ratio = self.calculate_harmonic_mean(matrix)
+        ratio = self.calculate_harmonic_mean(pooled_matrix)
         self.bed_status = ("在床" if ratio > 0.15 else "离床", ratio * 100)
 
         # 计算坠床/坐床边状态
-        centroid = self.calculate_weighted_centroid(matrix)
+        centroid = self.calculate_weighted_centroid(pooled_matrix)
         #赋值给self.centroid,转化为元组,横纵坐标+1
         self.centroid = tuple(map(lambda x: x+1, centroid))
         centroid = self.centroid
-        features = self.extract_features(matrix)
+        features = self.extract_features(pooled_matrix)
         probability = self.embedded_system_logic(features)
         
         if centroid[1] < 3.5 or centroid[1] > 6.5:
@@ -202,10 +207,9 @@ class MatrixMetrics:
         if ratio < 0.15:
             self.edge_status = ("离床", 100)
         # 计算其他指标
-        flat_matrix = matrix.flatten()
+        flat_matrix = pooled_matrix.flatten()
         sorted_matrix = np.sort(flat_matrix)[::-1]
 
-        # self.top48_avg = np.mean(sorted_matrix[:48]) if len(sorted_matrix) >= 48 else 0
         self.rest_avg = np.mean(sorted_matrix[48:]) if len(sorted_matrix) > 48 else 0
         
         self.top48_median = np.median(sorted_matrix[:48]) if len(sorted_matrix) >= 48 else 0
@@ -227,10 +231,9 @@ class MatrixMetrics:
 
     def calculate_weighted_centroid(self, matrix, top_n=64):
         top_n = 20
-        reshaped_matrix = matrix.reshape(16, 10)
-        flat_indices = np.argsort(reshaped_matrix.flatten())[-top_n:]
-        top_points = np.array(np.unravel_index(flat_indices, reshaped_matrix.shape)).T
-        point_values = reshaped_matrix[top_points[:, 0], top_points[:, 1]]
+        flat_indices = np.argsort(matrix.flatten())[-top_n:]
+        top_points = np.array(np.unravel_index(flat_indices, matrix.shape)).T
+        point_values = matrix[top_points[:, 0], top_points[:, 1]]
         total_weight = np.sum(point_values)
         centroid = np.sum(top_points * point_values[:, np.newaxis], axis=0) / total_weight
         return centroid
@@ -268,6 +271,8 @@ class MatrixMetrics:
             "top48_median": self.top48_median,
             "rest_median": self.rest_median
         }     
+        
+        
 def get_ip_addresses():
     # 获取所有非回环网络接口的IP地址
     ip_addresses = []
@@ -460,9 +465,36 @@ def setup_serial_port():
     return None  # 返回None表示没有可用的串口设备
 
 
+# 向量化操作池化函数
+def vectorized_pooling(matrix, pool_size):
+    """
+    对矩阵进行池化操作
+    :param matrix: 原始矩阵
+    :param pool_size: 池化窗口大小，格式为 (mxn)
+    :return: 池化后的矩阵
+    """
+    m, n = pool_size
+    h, w = matrix.shape
+    
+    # 计算新的高度和宽度
+    new_h = (h // m) * m
+    new_w = (w // n) * n
+    
+    # 计算需要裁剪的行和列
+    crop_h = (h - new_h) // 2
+    crop_w = (w - new_w) // 2
+    
+    # 调整矩阵大小，使其能被池化窗口整除
+    matrix = matrix[crop_h:crop_h + new_h, crop_w:crop_w + new_w]
+    
+    # 计算池化后的矩阵
+    pooled_matrix = matrix.reshape(new_h // m, m, new_w // n, n).mean(axis=(1, 3))
+    
+    return pooled_matrix
+
 def predict_posture(model, matrix):
     # 使用已加载的模型对输入矩阵进行姿态预测
-    input_data = matrix.flatten().reshape(1, 160, 1)  # 将矩阵展开为一维数组，并调整形状为（1, 160, 1）
+    input_data = matrix.flatten().reshape(1, 1024, 1)  # 将矩阵展开为一维数组，并调整形状为（1, 1024, 1）
     input_data = tf.cast(input_data, tf.float32)  # 将数据类型转换为float32，以适应模型输入的要求
     
     predictions = model(input_data, training=False)  # 使用模型进行预测，禁用训练模式
@@ -515,18 +547,21 @@ matrix_metrics = MatrixMetrics()
 def update_heatmap(matrix, top_n=64):
     global latest_heatmap, heatmap_timestamp, heatmap_fig, heatmap_ax, heatmap_colorbar
 
-    with heatmap_lock:  # 使用锁来确保热力图更新时的线程安全
-        heatmap_ax.clear()  # 清除当前的热力图
+    with heatmap_lock:
+        heatmap_ax.clear()
 
-        cax = heatmap_ax.imshow(matrix, cmap='viridis', interpolation='nearest', aspect=1.2)  # 显示新的矩阵热力图
+        # 对输入矩阵进行池化
+        pooled_matrix = vectorized_pooling(matrix, (2, 3))
+
+        cax = heatmap_ax.imshow(pooled_matrix, cmap='viridis', interpolation='nearest', aspect='auto')
         
         if heatmap_colorbar is None:
-            heatmap_colorbar = heatmap_fig.colorbar(cax, ax=heatmap_ax, label='压力值')  # 如果颜色条不存在，创建一个新的
+            heatmap_colorbar = heatmap_fig.colorbar(cax, ax=heatmap_ax, label='压力值')
         else:
-            heatmap_colorbar.update_normal(cax)  # 如果颜色条已存在，更新其数据
+            heatmap_colorbar.update_normal(cax)
 
-        # 获取矩阵的维度
-        height, width = matrix.shape
+        # 获取池化后矩阵的维度
+        height, width = pooled_matrix.shape
 
         # 设置刻度标签，使其从1开始
         heatmap_ax.set_xticks(range(width))
@@ -534,32 +569,23 @@ def update_heatmap(matrix, top_n=64):
         heatmap_ax.set_xticklabels(range(1, width + 1))
         heatmap_ax.set_yticklabels(range(1, height + 1))
         
-        
-        flat_indices = np.argsort(matrix.flatten())[-top_n:]  # 获取矩阵中值最大的前top_n个点的索引
-        top_points = np.array(np.unravel_index(flat_indices, matrix.shape)).T  # 将一维索引转换为二维坐标
+        flat_indices = np.argsort(pooled_matrix.flatten())[-top_n:]
+        top_points = np.array(np.unravel_index(flat_indices, pooled_matrix.shape)).T
 
-        # point_values = matrix[top_points[:, 0], top_points[:, 1]]  # 获取这些点对应的值
-        # total_weight = np.sum(point_values)  # 计算这些点的总权重
-        # centroid = np.sum(top_points * point_values[:, np.newaxis], axis=0) / total_weight  # 计算质心（加权平均）
-            # 使用 MatrixMetrics 的方法计算重心
-        
-        centroid = matrix_metrics.calculate_weighted_centroid(matrix, top_n)
+        centroid = matrix_metrics.calculate_weighted_centroid(pooled_matrix, top_n)
+
         # 使用PCA计算主方向
         pca = PCA(n_components=1)
         pca.fit(top_points)
-        direction_vector = pca.components_[0]  # 获取主方向向量
+        direction_vector = pca.components_[0]
 
-        # 确保方向向量指向数据点的主要分布方向
         if np.dot(direction_vector, top_points.mean(axis=0) - centroid) < 0:
-            direction_vector = -direction_vector  # 如果方向不正确，则翻转向量
+            direction_vector = -direction_vector
 
         # 设置线段长度，并确保通过质心
-        scale = max(matrix.shape) / 2
+        scale = max(pooled_matrix.shape) / 2
         start_point = centroid - scale * direction_vector
         end_point = centroid + scale * direction_vector
-
-        # 获取矩阵的宽度和高度
-        height, width = matrix.shape
 
         # 裁剪线段以确保它不会超出热力图范围
         start_point, end_point = clip_line_to_bounds(start_point, end_point, width-1, height-1)
@@ -572,7 +598,7 @@ def update_heatmap(matrix, top_n=64):
         heatmap_ax.scatter(centroid[1], centroid[0], color='green', edgecolor='black', s=100, label='加权质心')
 
         # 显示角度信息
-        angle = np.arctan2(direction_vector[0], direction_vector[1]) * 180 / np.pi  # 计算角度（从方向向量的反正切值）
+        angle = np.arctan2(direction_vector[0], direction_vector[1]) * 180 / np.pi
         angle_text = f"角度: {angle:.2f}°"
         heatmap_ax.text(0.05, 0.95, angle_text, transform=heatmap_ax.transAxes, verticalalignment='top', fontsize=10, bbox=dict(facecolor='white', alpha=0.7))
 
@@ -581,16 +607,15 @@ def update_heatmap(matrix, top_n=64):
         heatmap_ax.set_ylabel("Y轴")
         heatmap_ax.legend(loc='upper right', bbox_to_anchor=(1.2, 1), fontsize='small')
 
-        heatmap_fig.tight_layout()  # 调整布局，使所有元素都在图内
+        heatmap_fig.tight_layout()
 
-        # 保存图像到内存
         img_buffer = io.BytesIO()
-        heatmap_fig.savefig(img_buffer, format='png', bbox_inches='tight', pad_inches=0.1)  # 将图像保存到内存中的字节流
+        heatmap_fig.savefig(img_buffer, format='png', bbox_inches='tight', pad_inches=0.1)
         img_buffer.seek(0)
-        latest_heatmap = img_buffer.getvalue()  # 更新最新的热力图数据
-        heatmap_timestamp = time.time()  # 记录热力图的更新时间戳
+        latest_heatmap = img_buffer.getvalue()
+        heatmap_timestamp = time.time()
 
-    return matrix, top_points, centroid, direction_vector, angle  # 返回矩阵、选中点、质心、方向向量和角度
+    return pooled_matrix, top_points, centroid, direction_vector, angle
 
 def clip_line_to_bounds(start, end, width, height):
     # 裁剪线段的起点和终点，确保它们位于热力图的范围内
@@ -702,8 +727,8 @@ class InferenceThread(QThread):
                         "confidence": float(confidence),
                         "timestamp": current_time
                     }
-                    
-                    ratio = self.calculate_harmonic_mean(matrix)
+                    pooled_matrix = vectorized_pooling(matrix, (2, 3))
+                    ratio = self.calculate_harmonic_mean(pooled_matrix)
                     if ratio < 0.15:
                         current_prediction = "离床"
                         confidence = 1.0
