@@ -187,13 +187,13 @@ class MatrixMetrics:
         features = self.extract_features(pooled_matrix)
         probability = self.embedded_system_logic(features)
         
-        if centroid[1] < 3.5 or centroid[1] > 6.5:
+        if centroid[1] < 3.5 or centroid[1] > 7.5:
             if probability > 0.5:
                 status = "坠床风险"
             else:
                 status = "坐床边"
             self.edge_status = (status, max(probability, 1 - probability) * 100)
-        elif centroid[1] < 4 or centroid[1] >= 6:
+        elif centroid[1] < 4 or centroid[1] >= 7:
             if probability < 0.5:
                 status = "坐床边"
                 self.edge_status = (status, max(probability, 1 - probability) * 100)
