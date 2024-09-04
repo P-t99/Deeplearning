@@ -553,7 +553,7 @@ def update_heatmap(matrix, top_n=64):
         # 对输入矩阵进行池化
         pooled_matrix = vectorized_pooling(matrix, (2, 3))
 
-        cax = heatmap_ax.imshow(pooled_matrix, cmap='viridis', interpolation='nearest', aspect='auto')
+        cax = heatmap_ax.imshow(pooled_matrix, cmap='viridis', interpolation='nearest', aspect='1.2')
         
         if heatmap_colorbar is None:
             heatmap_colorbar = heatmap_fig.colorbar(cax, ax=heatmap_ax, label='压力值')
