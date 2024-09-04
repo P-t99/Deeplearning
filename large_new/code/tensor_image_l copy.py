@@ -239,28 +239,39 @@ class MatrixMetrics:
         return centroid
 
     def extract_features(self, matrix):
+        """
+        从矩阵中提取特征
+        :param matrix: 输入矩阵
+        :return: 提取的特征列表
+        """
         flat_matrix = matrix.flatten()
         
-        top64_indices = np.argsort(flat_matrix)[-32:]
-        top64_values = flat_matrix[top64_indices]
-        valid_top64_indices = top64_indices[top64_values > 35]
-        valid_top64_rows = valid_top64_indices // matrix.shape[1]
-        unique_valid_top64_rows = np.unique(valid_top64_rows)
+        # 计算矩阵元素的80分位数
+        percentile_80 = np.mean(flat_matrix) + 0.8*np.std(flat_matrix)
         
-        min_val, max_val = np.min(flat_matrix), np.max(flat_matrix)
-        threshold = min_val + 0.5 * (max_val - min_val)
+        # 特征1: topN大且大于80分位数的点所在的唯一行的个数
+        N = 32
+        topN_indices = np.argsort(flat_matrix)[-N:]
+        topN_values = flat_matrix[topN_indices]
+        valid_topN_indices = topN_indices[topN_values > percentile_80]
+        valid_topN_rows = valid_topN_indices // matrix.shape[1]
+        unique_valid_topN_rows = np.unique(valid_topN_rows)
         
-        above_threshold_indices = np.where((flat_matrix >= threshold) & (flat_matrix > 35))[0]
-        above_threshold_rows = above_threshold_indices // matrix.shape[1]
-        unique_above_threshold_rows = np.unique(above_threshold_rows)
-        
-        return [len(unique_valid_top64_rows), len(unique_above_threshold_rows)]
+        return [len(unique_valid_topN_rows)]
 
     def embedded_system_logic(self, features):
-        coefficients = np.array([4.59846052 ,1.42464485])
-        intercept = -43.540987268759594
+        """
+        模拟嵌入式系统的逻辑，计算预测概率
+        :param features: 输入特征
+        :return: 预测概率
+        """
+        # 在函数内部定义系数和截距
+        coefficients = np.array([5.21937961])
+        intercept = -40.67752153154328
+
         log_odds = np.dot(features, coefficients) + intercept
-        return 1 / (1 + np.exp(-log_odds))
+        probability = 1 / (1 + np.exp(-log_odds))
+        return probability
 
     def get_metrics(self):
         return {
