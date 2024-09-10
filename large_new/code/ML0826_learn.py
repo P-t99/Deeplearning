@@ -188,6 +188,7 @@ def embedded_system_logic(features, coefficients, intercept):
     :param coefficients: 模型系数
     :param intercept: 模型截距
     :return: 预测概率
+    
     """
     log_odds = np.dot(features, coefficients) + intercept  # 计算log-odds，即线性模型的输出
     probability = 1 / (1 + np.exp(-log_odds))  # 应用sigmoid函数将log-odds转换为概率
@@ -297,7 +298,7 @@ def main():
     sit_bed_folder, fall_bed_folder = get_data_paths('test')
     
     # 获取测试数据路径
-    test_sit_bed_folder, test_fall_bed_folder = get_data_paths('train')
+    test_sit_bed_folder, test_fall_bed_folder = get_data_paths('test')
 
     # 加载和预处理训练数据
     logging.info("开始加载和预处理训练数据...")
@@ -327,7 +328,7 @@ def main():
 
     # 嵌入式模型测试
     logging.info("开始嵌入式模型测试...")
-    probabilities, y_true = test_embedded_model(test_sit_bed_folder, test_fall_bed_folder, coefficients, intercept)  # 测试嵌入式模型
+    probabilities, y_true = test_embedded_model(test_sit_bed_folder, test_fall_bed_folder, coefficients-0.5, intercept)  # 测试嵌入式模型
 
     # 绘制预测概率图像
     logging.info("绘制预测概率图像...")
