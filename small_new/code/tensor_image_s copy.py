@@ -26,11 +26,11 @@ from gui_module import run_gui  # 导入自定义的GUI模块，确保该模块�
 from movement_detection import DataCollector, DataVisualizer
 import io
 from PIL import Image
-
+from scipy import signal as scipy_signal
 # 设置Matplotlib的中文字体支持
 plt.rcParams['font.sans-serif'] = ['SimHei']  # 设置SimHei字体用于显示中文标签
 plt.rcParams['axes.unicode_minus'] = False  # 解决Matplotlib无法正常显示负号的问题
-
+from scipy.signal import savgol_filter
 # 设置日志格式和级别
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -64,9 +64,15 @@ logging.info("模型加载成功")  # 打印模型加载成功的日志信息
 app = Flask(__name__)  # 创建Flask应用
 
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PyQt5.QtCore import pyqtSignal, QObject
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer, Qt
+class PlotUpdater(QObject):
+    update_plot_signal = pyqtSignal(object, object)
 
+    def __init__(self):
+        super().__init__()
+        
 class PlotWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -88,6 +94,258 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import time
 from queue import Queue
+
+from PyQt5.QtCore import pyqtSignal, QObject
+
+from PyQt5.QtCore import pyqtSignal, QObject
+from PyQt5.QtWidgets import QWidget, QVBoxLayout
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+
+class PlotUpdater(QObject):
+    update_plot_signal = pyqtSignal(object, object)
+
+    def __init__(self):
+        super().__init__()
+
+class PlotWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.figure = Figure(figsize=(10, 8), dpi=100)
+        self.canvas = FigureCanvas(self.figure)
+        layout = QVBoxLayout()
+        layout.addWidget(self.canvas)
+        self.setLayout(layout)
+        self.ax1 = self.figure.add_subplot(211)
+        self.ax2 = self.figure.add_subplot(212)
+        self.setWindowTitle("呼吸信号")
+
+    def update_plot(self, original_data, smoothed_data):
+        self.ax1.clear()
+        self.ax2.clear()
+
+        self.ax1.plot(original_data, label='原始数据')
+        self.ax1.set_title('原始呼吸信号')
+        self.ax1.legend()
+
+        self.ax2.plot(smoothed_data, label='平滑后数据', color='red')
+        self.ax2.set_title('平滑后的呼吸信号')
+        self.ax2.legend()
+
+        self.figure.tight_layout()
+        self.canvas.draw()
+
+class BreathRateCalculator:
+    def __init__(self, sequence_len=100, sampling_rate=12):
+        self.sequence_len = sequence_len
+        self.sampling_rate = sampling_rate
+        self.real_arr = np.zeros((sequence_len, 40))
+        self.breath_sw = 0
+        self.breath_rate = 0
+        self.still_or_life = 0
+        self.previous_frames_array = np.zeros((360, 16))
+        self.breath_count_array = np.zeros(16)
+        self.condition_trigger_history_array = np.zeros((5, 16))
+        self.trigger_count_array = np.zeros(16)
+        self.dominant_frequency_array = np.zeros(16)
+        self.last_fft_time = 0
+        self.fft_interval = 1  # 每秒进行一次FFT
+        self.plot_window = PlotWindow()
+        self.plot_window.show()
+        self.plot_updater = PlotUpdater()
+        self.plot_updater.update_plot_signal.connect(self.plot_window.update_plot)
+  
+        
+    def process_matrix(self, matrix):
+        data = np.sum(matrix.reshape(4, 40), axis=0)
+
+        if self.breath_sw < self.sequence_len:
+            self.real_arr[self.breath_sw, :] = data
+            self.breath_sw += 1
+        else:
+            self.real_arr = np.roll(self.real_arr, -1, axis=0)
+            self.real_arr[-1, :] = data
+
+        # 每次处理矩阵时都调用 check_matrix
+        self.check_matrix(matrix)
+
+    def calculate_breath_rate(self):
+        if self.breath_sw < self.sequence_len:
+            return 0
+
+        std_arr = np.std(self.real_arr, axis=0)
+        sorted_index = np.argsort(std_arr)[::-1]
+
+        cutoff_lowpass = 0.6
+        nyquist_rate = self.sampling_rate / 2
+        cutoff_norm_lowpass = cutoff_lowpass / nyquist_rate
+        b_lowpass, a_lowpass = scipy_signal.butter(4, cutoff_norm_lowpass, 'low')
+        first_column = scipy_signal.filtfilt(b_lowpass, a_lowpass, self.real_arr[:, sorted_index[0]])
+        peaks, _ = scipy_signal.find_peaks(first_column, distance=10)
+        
+        if len(peaks) > 1:
+            avg_loc = np.mean(np.diff(peaks))
+            new_rate = 600 * 0.8 / avg_loc
+            self.breath_rate += (new_rate - self.breath_rate) / 10
+        elif self.breath_rate <= 10:
+            self.breath_rate = 10
+            
+        # print("呼吸：",self.breath_rate)
+        return self.breath_rate
+
+    def check_matrix(self, frameData_1024):
+        numRows = frameData_1024.shape[0]
+        line_num = 1
+        numPairs = numRows // line_num
+        current_time = time.time()
+        
+        # 检查是否需要进行FFT
+        do_fft = current_time - self.last_fft_time >= self.fft_interval
+        if do_fft:
+            self.last_fft_time = current_time
+
+        for i in range(numPairs):
+            rowIndex = i
+            rowData = frameData_1024[rowIndex,:]
+            if self.process_two_rows(rowData, i, do_fft):
+                self.still_or_life = 1
+                # return self.still_or_life
+        self.still_or_life = 0
+        return self.still_or_life
+
+    # 定义一个新方法来处理信号
+    def process_signal(self, signal):
+        # 减去信号的均值
+        processed_signal = signal - np.mean(signal)
+        return processed_signal
+
+    def process_two_rows(self, rowData, pairIndex, do_fft):
+        # varianceRow = np.var(rowData)
+        varianceRow = np.sum(rowData[3:7])
+
+        previousFrames = self.previous_frames_array[:,pairIndex]
+        BREATH_COUNT = self.breath_count_array[pairIndex]
+        conditionTriggerHistory = self.condition_trigger_history_array[:, pairIndex]
+        TRIGGER_COUNT = self.trigger_count_array[pairIndex]
+        dominantFrequency = self.dominant_frequency_array[pairIndex]
+
+        if BREATH_COUNT < 360:
+            BREATH_COUNT += 1
+            previousFrames[int(BREATH_COUNT)-1] = varianceRow
+        else:
+            previousFrames = np.roll(previousFrames, -1)
+            previousFrames[-1] = varianceRow
+        # print(f"行 {pairIndex} 的记录数组：", previousFrames)    
+        # if 'smoothed_frames' not in locals():
+        #     smoothed_frames = previousFrames
+
+        if do_fft:
+            
+            dominantFrequency, peakIntensity,moving_avg = self.analyze_signal_frequency(previousFrames, 12)
+            smoothed_frames = moving_avg
+            self.dominant_frequency_array[pairIndex] = dominantFrequency
+            if pairIndex == 5:
+                print("原始数据:", previousFrames)
+                print("平滑后数据:", smoothed_frames)
+                print("breathcount:", BREATH_COUNT)
+                print("dominantFrequency:", dominantFrequency)
+                print("peakIntensity:", peakIntensity)
+                
+                # 发送信号以更新图表
+
+
+                # 处理 previousFrames 和 smoothed_frames
+                processed_previousFrames = self.process_signal(previousFrames)
+                processed_smoothed_frames = self.process_signal(smoothed_frames)
+
+                # 更新图表时使用处理后的数据
+                self.plot_updater.update_plot_signal.emit(processed_previousFrames, processed_smoothed_frames)
+
+            
+        conditionTriggered = (0.16 <= dominantFrequency <= 0.5)
+
+        if TRIGGER_COUNT < 5:
+            TRIGGER_COUNT += 1
+            conditionTriggerHistory[int(TRIGGER_COUNT)-1] = conditionTriggered
+        else:
+            conditionTriggerHistory = np.roll(conditionTriggerHistory, -1)
+            conditionTriggerHistory[-1] = conditionTriggered
+        
+        
+
+        self.previous_frames_array[:,pairIndex] = previousFrames
+        self.breath_count_array[pairIndex] = BREATH_COUNT
+        self.condition_trigger_history_array[:, pairIndex] = conditionTriggerHistory
+        self.trigger_count_array[pairIndex] = TRIGGER_COUNT
+
+        if np.sum(conditionTriggerHistory) >= 4:
+            return True
+        
+        return False
+
+    def analyze_signal_frequency(self, signal, samplingRate):
+        # 1. 应用Savitzky-Golay滤波
+        window_length = 21  # 窗口长度，保持为奇数
+        polyorder = 3
+        # if len(signal)<window_length:
+        #     window_length = len(signal) if len(signal)%2==1 else len(signal)-1
+        signal_smoothed = savgol_filter(signal, window_length, polyorder)
+
+        # 2. 应用移动平均滤波
+        window_size = 5
+        moving_avg = np.convolve(signal_smoothed, np.ones(window_size)/window_size, mode='valid')
+
+        # 去除直流分量
+        signal_detrended = moving_avg - np.mean(moving_avg)
+        
+        signalLength = len(signal_detrended)
+        fftSignal = np.fft.fft(signal_detrended)
+        P2 = np.abs(fftSignal / signalLength)
+        P1 = P2[:signalLength // 2 + 1]
+        P1[1:-1] = 2 * P1[1:-1]
+        f = samplingRate * np.arange(signalLength // 2 + 1) / signalLength
+        
+        # 找到峰值，但忽略0频率和非常低的频率（例如小于0.1 Hz）
+        min_freq_index = np.argmax(f >= 0.1)
+        peaks = scipy_signal.find_peaks(P1[min_freq_index:])[0] + min_freq_index
+        
+        if len(peaks) > 0:
+            peakFreqIndex = peaks[np.argmax(P1[peaks])]
+            peakFrequency = f[peakFreqIndex]
+            peakIntensity = P1[peakFreqIndex]
+            return peakFrequency, peakIntensity, moving_avg  # 返回平滑后的信号
+        return 0, 0, moving_avg  # 如果没有找到峰值，返回频率0和强度0，以及平滑后的信号
+
+
+
+class BreathRateThread(QThread):
+    breath_rate_updated = pyqtSignal(float, int)
+
+    def __init__(self):
+        super().__init__()
+        self.calculator = BreathRateCalculator()
+        self.running = True
+        self.matrix_queue = Queue()
+
+    def run(self):
+        while self.running:
+            if not self.matrix_queue.empty():
+                matrix = self.matrix_queue.get()
+                self.calculator.process_matrix(matrix)
+                breath_rate = self.calculator.calculate_breath_rate()
+                still_or_life = self.calculator.still_or_life
+                self.breath_rate_updated.emit(breath_rate, still_or_life)
+            else:
+                time.sleep(0.01)  # 短暂休眠以避免过度消耗CPU
+
+    def add_matrix(self, matrix):
+        self.matrix_queue.put(matrix)
+
+    def stop(self):
+        self.running = False
+        self.wait()
+
+
 
 class MovementDetectionThread(QThread):
     update_movement_plot = pyqtSignal(object)
@@ -168,6 +426,8 @@ class MatrixMetrics:
         self.rest_avg = 0
         self.top48_median = 0
         self.rest_median = 0
+        self.breath_rate = 0
+        self.still_or_life = 0
 
     def calculate(self, matrix):
         # 计算在床/离床状态
@@ -271,6 +531,10 @@ class MatrixMetrics:
         probability = 1 / (1 + np.exp(-log_odds))
         return probability
 
+    def update_breath_rate(self, breath_rate, still_or_life):
+        self.breath_rate = breath_rate
+        self.still_or_life = still_or_life
+
     def get_metrics(self):
         return {
             "bed_status": self.bed_status,
@@ -278,7 +542,9 @@ class MatrixMetrics:
             "centroid": self.centroid,
             "rest_avg": self.rest_avg,
             "top48_median": self.top48_median,
-            "rest_median": self.rest_median
+            "rest_median": self.rest_median,
+            "breath_rate": self.breath_rate,
+            "still_or_life": self.still_or_life
         }     
 def get_ip_addresses():
     # 获取所有非回环网络接口的IP地址
@@ -346,6 +612,8 @@ def home():
                                 <p>其余均值: ${data.rest_avg.toFixed(2)}</p>
                                 <p>Top48中位数: ${data.top48_median.toFixed(2)}</p>
                                 <p>其余中位数: ${data.rest_median.toFixed(2)}</p>
+                                <p>呼吸率: ${data.breath_rate.toFixed(2)}</p>
+                                <p>静物活物: ${data.still_or_life ? '活物' : '静物'}</p>
                             `;
                             document.getElementById('heatmap').src = '/get_heatmap?' + new Date().getTime();
                         });
@@ -437,7 +705,9 @@ def get_latest():
         "centroid": metrics.get("centroid", (0, 0)),
         "rest_avg": metrics.get("rest_avg", 0),
         "top48_median": metrics.get("top48_median", 0),
-        "rest_median": metrics.get("rest_median", 0)
+        "rest_median": metrics.get("rest_median", 0),
+        "breath_rate": metrics.get("breath_rate", 0),
+        "still_or_life": metrics.get("still_or_life", 0)
     })
     
 @app.route('/get_heatmap')
@@ -853,15 +1123,17 @@ def main():
     app = QApplication(sys.argv)  # 创建PyQt5应用程序实例
     gui = run_gui()  # 启动自定义的GUI
 
-    # 创建并启动数据收集、推理、指标计算和UI更新的线程
+    # 创建并启动数据收集、推理、指标计算、UI更新和体动检测的线程
     data_collection_thread = DataCollectionThread()
     inference_thread = InferenceThread(inference_interval=0.5)
     metrics_thread = MetricsCalculationThread(calculation_interval=0.5)
     ui_update_thread = UIUpdateThread(update_interval=0.5)
-    # 创建和启动体动检测线程
     movement_detection_thread = MovementDetectionThread()
+    
+    # 创建并启动呼吸率计算线程
+    breath_rate_thread = BreathRateThread()
 
-    threads = [data_collection_thread, inference_thread, metrics_thread, ui_update_thread, movement_detection_thread]
+    threads = [data_collection_thread, inference_thread, metrics_thread, ui_update_thread, movement_detection_thread, breath_rate_thread]
 
     for thread in threads:
         thread.start()  # 启动所有线程
@@ -871,13 +1143,17 @@ def main():
     inference_thread.update_gui.connect(gui.update_web_info)
     ui_update_thread.matrix_ready.connect(gui.update_heatmap)
     metrics_thread.metrics_ready.connect(gui.update_metrics)
-
-    # 新增：连接数据收集线程到体动检测线程
-    # 连接数据收集线程到体动检测线程
+    
+    # 连接数据收集线程到体动检测线程和呼吸率计算线程
     data_collection_thread.new_data_signal.connect(movement_detection_thread.add_new_data)
+    data_collection_thread.new_data_signal.connect(breath_rate_thread.add_matrix)
 
-    # 新增：连接体动检测线程到GUI的更新函数
+    # 连接呼吸率计算线程到GUI的更新函数
+    # breath_rate_thread.breath_rate_updated.connect(gui.update_breath_rate)
+
+    # 连接体动检测线程到GUI的更新函数（如果需要的话）
     # movement_detection_thread.update_movement_plot.connect(gui.update_movement_plot)
+
     # 处理GUI信号
     gui.start_collection.connect(lambda: setattr(gui, 'collecting', True))  # 开始数据收集
     gui.pause_collection.connect(lambda: setattr(gui, 'paused', True))  # 暂停数据收集
