@@ -1,5 +1,5 @@
 % 定义输入参数的大小和类型
-    XTest = coder.typeof(double(zeros(1, 160))); % 假设输入是1x160的双精度数组
+    XTest = coder.typeof(double(zeros(1, 160))); % 保持原来的1x160双精度数组
     
     % 配置代码生成器
     cfg = coder.config('lib');
@@ -34,5 +34,5 @@
         fprintf('请查看报告以获取更多详细信息：codegen/lib/predictTree/html/report.mldatx\n');
     end
     
-    % 添加MATLAB文件到生成的代码中
-    coder.updateBuildInfo('addMATLABFile', 'trainedTreeModel.mat');
+    % 修改MATLAB文件的添加
+    coder.updateBuildInfo('addMATLABFile', 'finalPrunedTreeModel.mat');

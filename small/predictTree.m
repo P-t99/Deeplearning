@@ -2,20 +2,23 @@ function YPred = predictTree(XTest)
     % 加载预训练的决策树模型
     persistent treeModel
     if isempty(treeModel)
-        treeModel = loadCompactModel('trainedTreeModel.mat');
+        loadedData = coder.load('finalPrunedTreeModel.mat');
+        treeModel = loadedData.finalPrunedTree;
     end
     
-    % 对输入数据进行归一化
-    X_min = min(XTest, [], 2);
-    X_max = max(XTest, [], 2);
-    XTest_normalized = (XTest - X_min) ./ (X_max - X_min + eps);
+    % 归一化输入数据
+    XTest_normalized = normalizeData(XTest);
     
-    % 预测
+    % 使用归一化后的数据进行预测
     YPred = predict(treeModel, XTest_normalized);
 end
 
-function model = loadCompactModel(filename)
-    % 加载紧凑模型
-    s = coder.load(filename);
-    model = s.tree;  % 将 s.treeModel 改为 s.tree
+function X_normalized = normalizeData(X)
+    X = single(X);  % 转换为单精度
+    lower_percentile = prctile(X, 2);
+    upper_percentile = prctile(X, 98);
+    
+    % 归一化到 0-255 范围并取整
+    normalized = (X - lower_percentile) / (upper_percentile - lower_percentile) * 255;
+    X_normalized = round(max(0, min(255, normalized)));
 end
