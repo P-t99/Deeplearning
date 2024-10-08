@@ -6,10 +6,14 @@
     cfg.GenerateReport = true;
     cfg.ReportPotentialDifferences = false;
     
-    % 针对嵌入式设备的额外配置
+    % 针对ARM Cortex-M4的配置
     cfg.HardwareImplementation.ProdHWDeviceType = 'ARM Compatible->ARM Cortex';
     cfg.HardwareImplementation.TargetHWDeviceType = 'ARM Compatible->ARM Cortex';
     cfg.EnableMemcpy = false;
+    
+    
+    % 如果目标处理器支持浮点运算单元（FPU），可以添加以下配置
+    % cfg.HardwareImplementation.FloatingPointSupport = 'FPU';
     
     % 使用新的动态内存分配选项
     cfg.EnableDynamicMemoryAllocation = 'Off';

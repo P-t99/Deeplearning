@@ -5,7 +5,7 @@
  * File: _coder_predictTree_info.c
  *
  * MATLAB Coder version            : 23.2
- * C/C++ source code generated on  : 29-Sep-2024 14:09:21
+ * C/C++ source code generated on  : 08-Oct-2024 10:55:16
  */
 
 /* Include Files */
@@ -80,7 +80,7 @@ mxArray *emlrtMexFcnProperties(void)
                 emlrtMxCreateString(
                     "D:\\repository\\deeplearning\\small\\predictTree.m"));
   emlrtSetField(xEntryPoints, 0, "TimeStamp",
-                emlrtMxCreateDoubleScalar(739524.58979166672));
+                emlrtMxCreateDoubleScalar(739533.44369212969));
   emlrtSetField(xEntryPoints, 0, "Constructor",
                 emlrtMxCreateLogicalScalar(false));
   emlrtSetField(xEntryPoints, 0, "Visible", emlrtMxCreateLogicalScalar(true));
