@@ -1,6 +1,7 @@
 % 数据准备
 data = readtable('train.csv');
 X = cellfun(@(x) str2num(x), data.data, 'UniformOutput', false);
+% X = cellfun(@(x) str2double(strsplit(strtrim(x))), data.data, 'UniformOutput', false);
 X = cat(3, X{:});  % 将所有矩阵堆叠成一个三维数组
 
 % 打印X的维度
