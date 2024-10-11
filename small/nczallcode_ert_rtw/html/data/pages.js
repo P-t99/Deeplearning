@@ -1,0 +1,1 @@
+var reportPages = [["摘要","nczallcode_survey.html"],["子系统报告","nczallcode_subsystems.html"],["代码接口报告","nczallcode_interface.html"],["可追溯性报告","nczallcode_trace.html"],["静态代码度量报告","nczallcode_metrics.html"],["代码替换报告","nczallcode_replacements.html"],["代码生成器假设","nczallcode_coderassumptions.html"]];
