@@ -5,7 +5,7 @@ load('finalTreeModel.mat');
 [~,~,~,bestLevel] = cvLoss(finalTree, 'SubTrees', 'all');
 
 % 尝试不同的剪枝级别
-for additionalPruning = 0:20
+for additionalPruning = 0:5
     prunedTree = prune(finalTree, 'Level', bestLevel + additionalPruning);
     
     % 评估模型
@@ -18,7 +18,7 @@ for additionalPruning = 0:20
 end
 
 % 选择一个你认为最佳的剪枝级别
-bestAdditionalPruning = 15;  % 这里你可以根据上面的结果选择一个最佳值
+bestAdditionalPruning = 2;  % 这里你可以根据上面的结果选择一个最佳值
 finalPrunedTree = prune(finalTree, 'Level',bestAdditionalPruning);
 
 % 保存最终剪枝后的模型

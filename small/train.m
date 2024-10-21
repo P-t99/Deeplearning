@@ -1,23 +1,11 @@
 % 数据准备
-data = readtable('train.csv');
+data = readtable('train1.csv');
 X = cellfun(@(x) str2num(x), data.data, 'UniformOutput', false);
 % X = cellfun(@(x) str2double(strsplit(strtrim(x))), data.data, 'UniformOutput', false);
 X = cat(3, X{:});  % 将所有矩阵堆叠成一个三维数组
 
 % 打印X的维度
 disp(['X的维度: ', num2str(size(X))]);
-
-% % 选取前三个矩阵，绘制热力图
-% figure;
-% for i = 1:3
-%     subplot(1,3,i);
-%     imagesc(reshape(X(:,:,i), 10, 16));  % 从三维数组中取矩阵并reshape
-%     colorbar;
-%     title(['第', num2str(i), '个矩阵']);
-%     axis equal;
-%     axis tight;
-% end
-
 Y = data.position;
 % 设置全局随机种子
 rng(42, 'twister');  % 42 可以替换为任何整数
@@ -88,3 +76,4 @@ function X_normalized = normalizeData(X)
         X_normalized(:,:,i) = single(round(max(0, min(255, normalized))));
     end
 end
+
